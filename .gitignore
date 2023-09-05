@@ -1,0 +1,7 @@
+.vscode
+!.vscode/extensions.json
+.env
+*.log
+*.json
+!*.json.example
+__pycache__/

@@ -1,0 +1,24 @@
+{
+	"ENV": "dev",
+	"BOI_TOKEN": "",
+	"BOT_TOKEN":  "",
+	"MONGO_URI": "",
+	"COGS": [
+		"Administration",
+		"RSS",
+		"Sticky"
+	],
+	"Sticky": {
+		"max_messages": 5,
+        "min_time": 15
+	},
+	"RSS": {
+		"update_interval_seconds": 300
+	},
+	"ADMIN_GUILD": 0,
+	"EMBED_COLOR": {
+		"r": 0,
+		"g": 0,
+		"b": 0
+	}
+}
