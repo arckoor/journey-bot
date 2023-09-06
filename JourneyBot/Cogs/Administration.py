@@ -37,6 +37,18 @@ class Administration(BaseCog):
         await inter.response.send_message("Shutting down.", ephemeral=True)
         await self.bot.close()
 
+    @commands.slash_command(guild_ids=[Configuration.get_master_var("ADMIN_GUILD")])
+    @commands.is_owner()
+    @commands.default_member_permissions(administrator=True)
+    async def upgrade(self, inter: ApplicationCommandInteraction):
+        """
+        Upgrade the bot.
+        """
+        file = open("upgradeRequest", "w")
+        file.close()
+        await inter.response.send_message("Upgrading.", ephemeral=True)
+        await self.bot.close()
+
 
 def setup(bot: commands.Bot):
     bot.add_cog(Administration(bot))
