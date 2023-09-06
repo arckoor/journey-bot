@@ -34,7 +34,7 @@ class Administration(BaseCog):
         """
         Restart the bot.
         """
-        await inter.response.send_message("Shutting dow", ephemeral=True)
+        await inter.response.send_message("Shutting down.", ephemeral=True)
         await self.bot.close()
 
 

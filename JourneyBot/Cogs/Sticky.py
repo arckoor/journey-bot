@@ -47,7 +47,18 @@ class Sticky(BaseCog):
             icon_url=inter.author.avatar.url
         )
         for sticky in stickies:
-            embed.add_field(name=f"#{self.bot.get_channel(sticky.channel).name} by @{self.bot.get_user(sticky.author).name}", value=f"{sticky.content}", inline=False)
+            channel = self.bot.get_channel(sticky.channel)
+            user = self.bot.get_user(sticky.author)
+            if channel and channel.name:
+                channel_name = channel.name
+            else:
+                channel_name = "Unknown"
+            if user and user.name:
+                user_name = user.name
+            else:
+                user_name = "Unknown"
+            stopped = "" if sticky.active else " (stopped)"
+            embed.add_field(name=f"#{channel_name} by @{user_name}{stopped}", value=f"{sticky.content}", inline=False)
         await inter.response.send_message(embed=embed, ephemeral=True)
 
     @stick.sub_command()
@@ -60,10 +71,11 @@ class Sticky(BaseCog):
         message : str
             The message to stick.
         """
+        msg = message.replace("\\n", "\n")
         channel = inter.channel
         if StickyMessage.objects(channel=channel.id):
             stickyMessage = StickyMessage.objects(channel=channel.id).first()
-            self.set_stick_data(stickyMessage, content=message, author=inter.author.id, active=True)
+            self.set_stick_data(stickyMessage, content=msg, author=inter.author.id, active=True)
             stickyMessage.save()
             await inter.response.send_message("Sticky message updated.", ephemeral=True)
             Logging.info(f"Sticky message updated in channel {channel.name} ({channel.guild.name}) by {inter.author.name} ({inter.author.id})")
@@ -72,7 +84,7 @@ class Sticky(BaseCog):
                 author=inter.author.id,
                 channel=channel.id,
                 guild=channel.guild.id,
-                content=message,
+                content=msg,
                 last_sent=time(),
                 messages_since=0
             )

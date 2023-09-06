@@ -17,8 +17,7 @@ class RSS(BaseCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
 
-    @commands.Cog.listener()
-    async def on_ready(self):
+    async def cog_load(self):
         self.update.start()
 
     async def close(self):
