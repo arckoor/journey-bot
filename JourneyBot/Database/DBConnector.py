@@ -12,6 +12,10 @@ class StickyMessage(Document):
     messages_since = IntField(required=True)
     active = BooleanField(required=True, default=True)
     current_id = IntField(required=False)
+    message_limit = IntField(required=False, default=0)
+    time_limit = IntField(required=False, default=0)
+    delete_old_sticky = BooleanField(required=False, default=True)
+    in_progress = BooleanField(required=False, default=False)
     meta = {
         "auto_create_index_on_save": False,
         "indexes": ["+channel", "+current_id"]
