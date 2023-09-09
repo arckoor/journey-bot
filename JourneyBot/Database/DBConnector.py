@@ -26,8 +26,10 @@ class RSSFeed(Document):
     guild = IntField(required=True)
     url = StringField(required=True)
     channel = IntField(required=True)
+    template = StringField(required=True)
     initialized = BooleanField(required=True, default=False)
     already_sent = ListField(StringField(), required=False)
+    in_progress = BooleanField(required=False, default=False)
     meta = {
         "auto_create_index_on_save": False,
         "indexes": ["+url"]

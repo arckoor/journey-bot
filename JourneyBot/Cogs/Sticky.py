@@ -1,5 +1,6 @@
 from time import time
 import datetime
+import typing
 
 import disnake  # noqa
 from disnake import ApplicationCommandInteraction
@@ -26,10 +27,10 @@ class Sticky(BaseCog):
     @stick.sub_command(description="List all stickies in the server.")
     async def list(self, inter: ApplicationCommandInteraction):
         stickies = StickyMessage.objects(guild=inter.guild_id)
-        now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
         if not stickies:
             await inter.response.send_message("No stickies found.", ephemeral=True)
             return
+        now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
         embed = disnake.Embed(
             title="Stickies",
             description="All stickies in this server.",
@@ -274,7 +275,7 @@ class Sticky(BaseCog):
         self,
         inter: ApplicationCommandInteraction,
         id: str = None,
-        respond_to: [Validation.ValidationType] = [
+        respond_to: [typing.Literal] = [
             Validation.ValidationType.INVALID_ID,
             Validation.ValidationType.ID_NOT_FOUND,
             Validation.ValidationType.NOT_IN_CHANNEL
@@ -287,7 +288,7 @@ class Sticky(BaseCog):
             Validation.ValidationType.ID_NOT_FOUND:   "No sticky message found with that ID.",
             Validation.ValidationType.NOT_IN_CHANNEL: "No sticky message found in this channel."
         }
-        if type in respond_to and not type == Validation.ValidationType.OK:
+        if type in respond_to:
             await inter.response.send_message(responses.get(type), ephemeral=True)
             return None
         return stickyMessage

@@ -1,3 +1,5 @@
+import typing
+
 import disnake # noqa
 from disnake import ApplicationCommandInteraction
 
@@ -28,7 +30,7 @@ async def get_from_id_or_channel(
     type: StickyMessage | RSSFeed,
     inter: ApplicationCommandInteraction,
     id: str = None
-) -> tuple[StickyMessage | RSSFeed, ValidationType] | tuple[None, ValidationType]:
+) -> tuple[StickyMessage | RSSFeed, typing.Literal[ValidationType.OK]] | tuple[None, typing.Literal[ValidationType.INVALID_ID, ValidationType.ID_NOT_FOUND, ValidationType.NOT_IN_CHANNEL]]:
     if id:
         if not is_object_id(id):
             return None, ValidationType.INVALID_ID
