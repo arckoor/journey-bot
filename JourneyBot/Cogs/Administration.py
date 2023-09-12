@@ -3,49 +3,49 @@ from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 
 from Cogs.BaseCog import BaseCog
-from Util import Configuration
+from Util import Configuration, Logging
 
 
 class Administration(BaseCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
 
-    @commands.slash_command(guild_ids=[Configuration.get_master_var("ADMIN_GUILD")])
+    @commands.slash_command(description="Change the bot's presence.", guild_ids=[Configuration.get_master_var("ADMIN_GUILD", 0)])
     @commands.is_owner()
     @commands.default_member_permissions(administrator=True)
-    async def presence(self, inter: ApplicationCommandInteraction, type: int, status: str):
-        """
-        Change the bot's presence.
-
-        Parameters
-        ----------
-        type: int
-            1 - Playing, 2 - Listening, 3 - Watching, 5 - Competing
-        status: str
-            The status to display.
-        """
-        await self.bot.change_presence(activity=disnake.Activity(type=type, name=status))
+    async def presence(
+        self,
+        inter: ApplicationCommandInteraction,
+        type:    str = commands.Param(description="The type of activity", choices=["Playing", "Listening", "Watching", "Competing"]),
+        message: str = commands.Param(description="The message to display")
+    ):
+        match type:
+            case "Playing":
+                activity = disnake.ActivityType(type=disnake.ActivityType.playing, name=message)
+            case "Listening":
+                activity = disnake.Activity(type=disnake.ActivityType.listening, name=message)
+            case "Watching":
+                activity = disnake.Activity(type=disnake.ActivityType.watching, name=message)
+            case "Competing":
+                activity = disnake.Activity(type=disnake.ActivityType.competing, name=message)
+        await self.bot.change_presence(activity=activity)
         await inter.response.send_message("Presence changed.", ephemeral=True)
 
-    @commands.slash_command(guild_ids=[Configuration.get_master_var("ADMIN_GUILD")])
+    @commands.slash_command(description="Restart the bot.", guild_ids=[Configuration.get_master_var("ADMIN_GUILD", 0)])
     @commands.is_owner()
     @commands.default_member_permissions(administrator=True)
     async def restart(self, inter: ApplicationCommandInteraction):
-        """
-        Restart the bot.
-        """
+        Logging.info(f"Restart requested by {inter.author.name}.")
         await inter.response.send_message("Shutting down.", ephemeral=True)
         await self.bot.close()
 
-    @commands.slash_command(guild_ids=[Configuration.get_master_var("ADMIN_GUILD")])
+    @commands.slash_command(description="Upgrade the bot.", guild_ids=[Configuration.get_master_var("ADMIN_GUILD", 0)])
     @commands.is_owner()
     @commands.default_member_permissions(administrator=True)
     async def upgrade(self, inter: ApplicationCommandInteraction):
-        """
-        Upgrade the bot.
-        """
         file = open("upgradeRequest", "w")
         file.close()
+        Logging.info(f"Upgrade requested by {inter.author.name}.")
         await inter.response.send_message("Upgrading.", ephemeral=True)
         await self.bot.close()
 

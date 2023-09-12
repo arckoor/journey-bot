@@ -1,5 +1,4 @@
 import asyncio
-import datetime
 import re
 import typing
 
@@ -11,7 +10,9 @@ from disnake.ext import commands, tasks
 
 from Cogs.BaseCog import BaseCog
 from Database.DBConnector import RSSFeed
-from Util import Configuration, Logging, Validation
+from Database import DBUtils
+from Views import Embed
+from Util import Configuration, Logging
 
 
 class RSS(BaseCog):
@@ -27,18 +28,20 @@ class RSS(BaseCog):
     @commands.slash_command(dm_permission=False, description="RSS feed management.")
     @commands.guild_only()
     @commands.default_member_permissions(ban_members=True)
+    @commands.bot_has_permissions(send_messages=True)
     async def rss(self, inter: ApplicationCommandInteraction):
         pass
 
     @rss.sub_command(name="template-help", description="RSS feed help.")
     async def template_help(self, inter: ApplicationCommandInteraction):
-        embed = disnake.Embed(
+        embed = Embed.default_embed(
             title="RSS Feed Help",
             description="Explanation of the template syntax.",
-            color=disnake.Color.from_rgb(**Configuration.get_master_var("EMBED_COLOR"))
+            author=inter.author.name,
+            icon_url=inter.author.avatar.url
         )
-        embed.add_field(name="Variables", value="Variables are replaced with the corresponding value from the RSS feed.", inline=False)
         embed.add_field(name="Line breaks", value="Line breaks are represented by `\\n`.", inline=False)
+        embed.add_field(name="Variables", value="Variables are replaced with the corresponding value from the RSS feed.", inline=False)
         embed.add_field(name="{{title}}", value="The title of the post.", inline=False)
         embed.add_field(name="{{link}}", value="The link to the post.", inline=False)
         await inter.response.send_message(embed=embed, ephemeral=True)
@@ -49,15 +52,10 @@ class RSS(BaseCog):
         if not feeds:
             await inter.response.send_message("No feeds found.", ephemeral=True)
             return
-        now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-        embed = disnake.Embed(
+        embed = Embed.default_embed(
             title="RSS Feeds",
             description="All RSS feeds in this server.",
-            timestamp=now,
-            color=disnake.Color.from_rgb(**Configuration.get_master_var("EMBED_COLOR"))
-        )
-        embed.set_footer(
-            text=f"Requested by {inter.author.name}",
+            author=inter.author.name,
             icon_url=inter.author.avatar.url
         )
         for feed in feeds:
@@ -114,7 +112,7 @@ class RSS(BaseCog):
         await inter.response.send_message("Feed removed.", ephemeral=True)
         Logging.info(f"RSS feed removed from channel {inter.channel.name} ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id}): {url}")
 
-    @tasks.loop(seconds=Configuration.get_master_var("RSS").get("update_interval_seconds"))
+    @tasks.loop(seconds=Configuration.get_master_var("RSS", {"update_interval_seconds": 300}).get("update_interval_seconds"))
     async def update(self):
         await asyncio.gather(*(self.update_feed(feed) for feed in RSSFeed.objects(initialized=True)))
 
@@ -159,15 +157,15 @@ class RSS(BaseCog):
         inter: ApplicationCommandInteraction,
         id: str,
         respond_to: [typing.Literal] = [
-            Validation.ValidationType.INVALID_ID,
-            Validation.ValidationType.ID_NOT_FOUND,
+            DBUtils.ValidationType.INVALID_ID,
+            DBUtils.ValidationType.ID_NOT_FOUND,
         ]
     ) -> RSSFeed | None:
         rssFeed: RSSFeed
-        rssFeed, type = await Validation.get_from_id_or_channel(RSSFeed, inter, id)
+        rssFeed, type = await DBUtils.get_from_id_or_channel(RSSFeed, inter, id)
         response = {
-            Validation.ValidationType.INVALID_ID:   "Invalid ID.",
-            Validation.ValidationType.ID_NOT_FOUND: "No RSS feed found with that ID."
+            DBUtils.ValidationType.INVALID_ID:   "Invalid ID.",
+            DBUtils.ValidationType.ID_NOT_FOUND: "No RSS feed found with that ID."
         }
         if type in respond_to:
             await inter.response.send_message(response[type], ephemeral=True)

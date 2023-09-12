@@ -1,5 +1,4 @@
 from time import time
-import datetime
 import typing
 
 import disnake  # noqa
@@ -8,19 +7,22 @@ from disnake.ext import commands
 
 from Cogs.BaseCog import BaseCog
 from Database.DBConnector import StickyMessage
-from Util import Configuration, Logging, Validation
+from Database import DBUtils
+from Views import Embed
+from Util import Configuration, Logging
 
 
 class Sticky(BaseCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
-        config = Configuration.get_master_var(self.__class__.__name__)
+        config = Configuration.get_master_var(self.__class__.__name__, {"max_messages": 5, "min_time": 15})
         self.max_messages = config.get("max_messages")
         self.min_time = config.get("min_time")
 
     @commands.slash_command(dm_permission=False, description="Sticky message management.")
     @commands.guild_only()
     @commands.default_member_permissions(ban_members=True)
+    @commands.bot_has_permissions(send_messages=True)
     async def stick(self, inter: ApplicationCommandInteraction):
         pass
 
@@ -30,15 +32,10 @@ class Sticky(BaseCog):
         if not stickies:
             await inter.response.send_message("No stickies found.", ephemeral=True)
             return
-        now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-        embed = disnake.Embed(
+        embed = Embed.default_embed(
             title="Stickies",
             description="All stickies in this server.",
-            timestamp=now,
-            color=disnake.Color.from_rgb(**Configuration.get_master_var("EMBED_COLOR"))
-        )
-        embed.set_footer(
-            text=f"Requested by {inter.author.name}",
+            author=inter.author.name,
             icon_url=inter.author.avatar.url
         )
         for sticky in stickies:
@@ -65,15 +62,10 @@ class Sticky(BaseCog):
         stickyMessage = await self.get_sticky(inter, id)
         if not stickyMessage:
             return
-        now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-        embed = disnake.Embed(
+        embed = Embed.default_embed(
             title="Sticky Info",
             description="Info about the sticky in this channel.",
-            timestamp=now,
-            color=disnake.Color.from_rgb(**Configuration.get_master_var("EMBED_COLOR"))
-        )
-        embed.set_footer(
-            text=f"Requested by {inter.author.name}",
+            author=inter.author.name,
             icon_url=inter.author.avatar.url
         )
         embed.add_field(name="ID", value=f"{stickyMessage.id}")
@@ -95,7 +87,7 @@ class Sticky(BaseCog):
         delete_old_sticky: bool = commands.Param(default=None, name="delete-old-sticky", description="Whether to delete the old sticky message after a new one is sent. Defaults to True."),
         id:                 str = commands.Param(default=None, name="id",                description="The ID of a sticky message.", min_length=24, max_length=24)
     ):
-        stickyMessage = await self.get_sticky(inter, id, respond_to=[Validation.ValidationType.INVALID_ID, Validation.ValidationType.ID_NOT_FOUND])
+        stickyMessage = await self.get_sticky(inter, id, respond_to=[DBUtils.ValidationType.INVALID_ID, DBUtils.ValidationType.ID_NOT_FOUND])
         if inter.response.is_done():
             return
         channel = inter.channel
@@ -276,17 +268,17 @@ class Sticky(BaseCog):
         inter: ApplicationCommandInteraction,
         id: str = None,
         respond_to: [typing.Literal] = [
-            Validation.ValidationType.INVALID_ID,
-            Validation.ValidationType.ID_NOT_FOUND,
-            Validation.ValidationType.NOT_IN_CHANNEL
+            DBUtils.ValidationType.INVALID_ID,
+            DBUtils.ValidationType.ID_NOT_FOUND,
+            DBUtils.ValidationType.NOT_IN_CHANNEL
         ]
     ) -> StickyMessage | None:
         stickyMessage: StickyMessage
-        stickyMessage, type = await Validation.get_from_id_or_channel(StickyMessage, inter, id)
+        stickyMessage, type = await DBUtils.get_from_id_or_channel(StickyMessage, inter, id)
         responses = {
-            Validation.ValidationType.INVALID_ID:     "Invalid ID.",
-            Validation.ValidationType.ID_NOT_FOUND:   "No sticky message found with that ID.",
-            Validation.ValidationType.NOT_IN_CHANNEL: "No sticky message found in this channel."
+            DBUtils.ValidationType.INVALID_ID:     "Invalid ID.",
+            DBUtils.ValidationType.ID_NOT_FOUND:   "No sticky message found with that ID.",
+            DBUtils.ValidationType.NOT_IN_CHANNEL: "No sticky message found in this channel."
         }
         if type in respond_to:
             await inter.response.send_message(responses.get(type), ephemeral=True)

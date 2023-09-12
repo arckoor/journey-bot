@@ -6,6 +6,12 @@ MASTER_CONFIG = dict()
 MASTER_LOADED = False
 
 
+def save_master_var():
+    global MASTER_CONFIG
+    with open("config/master.json", "w") as file:
+        json.dump(MASTER_CONFIG, file, indent=4, skipkeys=True, sort_keys=True)
+
+
 def load_master():
     global MASTER_CONFIG, MASTER_LOADED
     try:
@@ -17,12 +23,13 @@ def load_master():
         raise e
 
 
-def get_master_var(key):
+def get_master_var(key, default=None):
     global MASTER_LOADED, MASTER_CONFIG
     if not MASTER_LOADED:
         load_master()
     if key not in MASTER_CONFIG.keys():
-        raise KeyError(f"Key {key} not found in master config")
+        MASTER_CONFIG[key] = default
+        save_master_var()
     return MASTER_CONFIG[key]
 
 

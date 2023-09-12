@@ -36,7 +36,7 @@ if __name__ == "__main__":
     }
 
     journeyBot = JourneyBot(**args)
-    journeyBot.run(Configuration.get_master_var("BOT_TOKEN"))
+    journeyBot.run(Configuration.get_master_var("BOT_TOKEN", ""))
 
     try:
         for sig_name in ("SIGINT", "SIGTERM"):

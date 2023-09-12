@@ -37,7 +37,7 @@ class RSSFeed(Document):
 
 
 def init():
-    connect(host=Configuration.get_master_var("MONGO_URI"))
+    connect(host=Configuration.get_master_var("MONGO_URI", ""))
 
 
 def disconnect():
