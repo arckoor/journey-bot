@@ -48,4 +48,6 @@ class JourneyBot(commands.Bot):
             await inter.response.send_message("I'm missing permissions needed to run this command: " + str(exception))
         elif isinstance(exception, errors.MissingPermissions):
             await inter.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        elif isinstance(exception, errors.MemberNotFound):
+            await inter.response.send_message("I was unable to find the specified member.", ephemeral=True)
         return await super().on_slash_command_error(inter, exception)
