@@ -1,7 +1,7 @@
 import time
 
 import disnake # noqa
-from disnake import ApplicationCommandInteraction
+from disnake import ApplicationCommandInteraction, Forbidden
 from disnake.ext import commands
 
 from Cogs.BaseCog import BaseCog
@@ -29,6 +29,9 @@ class Basic(BaseCog):
     async def echo(self, inter: ApplicationCommandInteraction, message: str = commands.Param(description="The message to send.")):
         try:
             await inter.channel.send(message)
+        except Forbidden:
+            await inter.response.send_message("I don't have permission to send messages in that channel.", ephemeral=True)
+            return
         except Exception as e:
             Logging.error(f"Failed to echo message: {e}")
             await inter.response.send_message("Something went wrong while trying to send the message.", ephemeral=True)

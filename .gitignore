@@ -2,6 +2,7 @@
 !.vscode/extensions.json
 .env
 *.log
+*.log.*
 *.json
 !*.json.example
 __pycache__/
