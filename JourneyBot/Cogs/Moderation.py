@@ -21,7 +21,7 @@ class Moderation(BaseCog):
     async def remove_reactions(
         self,
         inter: ApplicationCommandInteraction,
-        user:         disnake.Member = commands.Param(description="The user to remove reactions from."),
+        user:           disnake.User = commands.Param(description="The user to remove reactions from."),
         channel: disnake.TextChannel = commands.Param(default=None, description="The channel to remove reactions from."),
         time_frame:              str = commands.Param(default="5 Minutes", name="time-frame", description="The time frame to remove reactions from.",
                                                       choices=["10 Minutes", "30 Minutes", "1 Hour", "6 Hours", "12 Hours", "24 Hours", "3 Days", "7 Days"]),
