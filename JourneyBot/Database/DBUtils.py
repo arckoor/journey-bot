@@ -4,7 +4,7 @@ import disnake # noqa
 from disnake import ApplicationCommandInteraction
 
 from enum import Enum
-from Database.DBConnector import StickyMessage, RSSFeed
+from Database.DBConnector import StickyMessage, RSSFeed, GuildConfig
 
 
 class ValidationType(Enum):
@@ -42,3 +42,11 @@ async def get_from_id_or_channel(
             return None, ValidationType.NOT_IN_CHANNEL
         document = type.objects(channel=inter.channel.id).first()
     return document, ValidationType.OK
+
+
+def get_guild_config(id: int) -> GuildConfig:
+    if not GuildConfig.objects(guild=id):
+        guild = GuildConfig(guild=id)
+        guild.save()
+        return guild
+    return GuildConfig.objects(guild=id).first()

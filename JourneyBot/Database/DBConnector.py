@@ -36,6 +36,15 @@ class RSSFeed(Document):
     }
 
 
+class GuildConfig(Document):
+    guild = IntField(required=True)
+    react_remove_excluded_channels = ListField(IntField(), required=False)
+    meta = {
+        "auto_create_index_on_save": False,
+        "indexes": ["+guild"]
+    }
+
+
 def init():
     connect(host=Configuration.get_master_var("MONGO_URI", ""))
 
