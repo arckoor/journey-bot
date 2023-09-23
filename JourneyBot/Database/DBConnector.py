@@ -39,6 +39,7 @@ class RSSFeed(Document):
 class GuildConfig(Document):
     guild = IntField(required=True)
     react_remove_excluded_channels = ListField(IntField(), required=False)
+    react_remove_greedy_limit = IntField(required=False, default=25)
     meta = {
         "auto_create_index_on_save": False,
         "indexes": ["+guild"]
