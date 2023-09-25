@@ -13,7 +13,7 @@ class JourneyBot(commands.Bot):
         self.shutting_down = False
 
     async def on_ready(self):
-        Logging.BOT_LOG_CHANNEL = self.get_channel(Configuration.get_master_var("BOT_LOG_CHANNEL"))
+        await Logging.initialize(self, Configuration.get_master_var("BOT_LOG_CHANNEL"))
         if not self.loaded:
             for extension in Configuration.get_master_var("COGS", []):
                 try:
@@ -50,4 +50,9 @@ class JourneyBot(commands.Bot):
             await inter.response.send_message("You don't have permission to use this command.", ephemeral=True)
         elif isinstance(exception, errors.MemberNotFound):
             await inter.response.send_message("I was unable to find the specified member.", ephemeral=True)
+        else:
+            await inter.response.send_message("An error occurred while running this command.", ephemeral=True)
+            if exception.__cause__:
+                Logging.exception("Unhandled slash command error: ", exception.__cause__)
+            Logging.exception("Unhandled slash command error: ", exception)
         return await super().on_slash_command_error(inter, exception)
