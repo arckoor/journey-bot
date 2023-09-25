@@ -21,7 +21,7 @@ class Administration(BaseCog):
     ):
         match type:
             case "Playing":
-                activity = disnake.ActivityType(type=disnake.ActivityType.playing, name=message)
+                activity = disnake.Activity(type=disnake.ActivityType.playing, name=message)
             case "Listening":
                 activity = disnake.Activity(type=disnake.ActivityType.listening, name=message)
             case "Watching":
@@ -36,6 +36,7 @@ class Administration(BaseCog):
     @commands.default_member_permissions(administrator=True)
     async def restart(self, inter: ApplicationCommandInteraction):
         Logging.info(f"Restart requested by {inter.author.name}.")
+        Logging.bot_log(f"Restart requested by {inter.author.name}.")
         await inter.response.send_message("Shutting down.", ephemeral=True)
         await self.bot.close()
 
@@ -46,6 +47,7 @@ class Administration(BaseCog):
         file = open("upgradeRequest", "w")
         file.close()
         Logging.info(f"Upgrade requested by {inter.author.name}.")
+        Logging.bot_log(f"Upgrade requested by {inter.author.name}.")
         await inter.response.send_message("Upgrading.", ephemeral=True)
         await self.bot.close()
 

@@ -1,15 +1,20 @@
+import traceback
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import colorama
+
 import disnake  # noqa
+from disnake.ext import commands
 
 from Util import Configuration
+from Database import DBUtils
 
 colorama.init()
 
 LOGGER = logging.getLogger("journey-bot")
 DISCORD_LOGGER = logging.getLogger("disnake")
 
+BOT: commands.Bot = None
 BOT_LOG_CHANNEL = None
 
 
@@ -45,9 +50,26 @@ def setup_logging():
     LOGGER.addHandler(bot_handler)
 
 
+async def initialize(bot: commands.Bot, log_channel_id: str):
+    global BOT_LOG_CHANNEL, BOT
+    BOT = bot
+    BOT_LOG_CHANNEL = bot.get_channel(int(log_channel_id))
+    if BOT_LOG_CHANNEL is None:
+        LOGGER.error("-----Failed to get logging channel, aborting startup!-----")
+        await bot.close()
+
+
 async def bot_log(message: str = None, embed: disnake.Embed = None):
     if BOT_LOG_CHANNEL is not None:
-        await BOT_LOG_CHANNEL.send(content=message, embed=embed)
+        return await BOT_LOG_CHANNEL.send(content=message, embed=embed)
+
+
+async def guild_log(guild_id: int, message: str = None, embed: disnake.Embed = None):
+    guildConfig = DBUtils.get_guild_config(guild_id)
+    if guildConfig.guild_log is not None:
+        channel = BOT.get_channel(guildConfig.guild_log)
+        if channel is not None:
+            return await channel.send(content=message, embed=embed)
 
 
 def debug(message: str):
@@ -64,3 +86,14 @@ def warning(message: str):
 
 def error(message: str):
     LOGGER.error(message)
+
+
+def exception(message: str, error: Exception):
+    LOGGER.error(message)
+    trace = ""
+    LOGGER.error(str(error))
+    for line in traceback.format_tb(error.__traceback__):
+        line = line.replace("\t", "", 1)
+        trace = f"{trace}\n{line}"
+    LOGGER.error(trace)
+    BOT.loop.create_task(bot_log(embed=disnake.Embed(title="Exception", description=f"```Traceback:\n{trace}\n{str(error)}```", color=disnake.Color.red())))

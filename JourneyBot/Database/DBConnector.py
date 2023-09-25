@@ -38,6 +38,7 @@ class RSSFeed(Document):
 
 class GuildConfig(Document):
     guild = IntField(required=True)
+    guild_log = IntField(required=False)
     react_remove_excluded_channels = ListField(IntField(), required=False)
     react_remove_greedy_limit = IntField(required=False, default=25)
     meta = {

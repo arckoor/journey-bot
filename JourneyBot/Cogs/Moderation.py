@@ -79,6 +79,8 @@ class Moderation(BaseCog):
                     history = await channel.history(limit=message_amount, oldest_first=False).flatten()
                 else:
                     history = await channel.history(after=delta_time, oldest_first=False).flatten()
+                if not history:
+                    continue
                 r_cnt, m_cnt, _ = await self.remove_from_history(user, history, remove_entire_react)
                 reaction_cnt += r_cnt
                 msg_cnt += m_cnt

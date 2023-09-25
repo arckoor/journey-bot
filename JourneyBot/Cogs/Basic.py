@@ -28,7 +28,7 @@ class Basic(BaseCog):
     @commands.bot_has_permissions(send_messages=True)
     async def echo(self, inter: ApplicationCommandInteraction, message: str = commands.Param(description="The message to send.")):
         try:
-            await inter.channel.send(message)
+            await inter.channel.send(message.replace("\\n", "\n"))
         except Forbidden:
             await inter.response.send_message("I don't have permission to send messages in that channel.", ephemeral=True)
             return
