@@ -18,6 +18,7 @@ from Util import Configuration, Logging
 class RSS(BaseCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
+        self.locks = {}
 
     async def cog_load(self):
         self.update.start()
@@ -94,9 +95,10 @@ class RSS(BaseCog):
             channel=inter.channel.id
         )
         feed.save()
-        await inter.response.send_message("Feed added.", ephemeral=True)
+        await inter.response.send_message(f"Feed added. ID: `{feed.id}`", ephemeral=True)
         await self.initialize_feed(feed)
-        Logging.info(f"RSS feed added to channel {inter.channel.name} ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id}): {url}")
+        Logging.info(f"RSS feed ({feed.id}, {url}) was added to channel {inter.channel.name} ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})")
+        await Logging.guild_log(inter.guild_id, f"An RSS feed (`{feed.id}`, <{url}>) was added to {inter.channel.mention} by {inter.author.name} (`{inter.author.id}`)")
 
     @rss.sub_command(description="Remove an RSS feed from the server.")
     async def remove(
@@ -104,42 +106,53 @@ class RSS(BaseCog):
         inter: ApplicationCommandInteraction,
         id: str = commands.Param(name="id", description="The ID of the RSS feed.", min_length=24, max_length=24)
     ):
-        rssFeed = await self.get_feed(inter, id)
-        if not rssFeed:
+        feed = await self.get_feed(inter, id)
+        if not feed:
             return
-        url = rssFeed.url
-        rssFeed.delete()
+        url = feed.url
+        id = feed.id
+        feed.delete()
         await inter.response.send_message("Feed removed.", ephemeral=True)
-        Logging.info(f"RSS feed removed from channel {inter.channel.name} ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id}): {url}")
+        Logging.info(f"RSS feed ({id}, {url}) removed from channel {inter.channel.name} ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})")
+        await Logging.guild_log(inter.guild_id, f"An RSS feed (`{id}`, <{url}>) was removed from {inter.channel.mention} by {inter.author.name} (`{inter.author.id}`)")
 
     @tasks.loop(seconds=Configuration.get_master_var("RSS", {"update_interval_seconds": 300}).get("update_interval_seconds"))
     async def update(self):
-        await asyncio.gather(*(self.update_feed(feed) for feed in RSSFeed.objects(initialized=True)))
+        asyncio.ensure_future(asyncio.gather(*(self.update_feed(feed) for feed in RSSFeed.objects(initialized=True))))
 
     async def update_feed(self, feed: RSSFeed):
-        if feed.in_progress:
+        if feed.id not in self.locks:
+            self.locks[feed.id] = asyncio.Lock()
+        if self.locks[feed.id].locked():
             return
-        feed.in_progress = True
-        feed.save()
-        channel = self.bot.get_channel(feed.channel)
-        if not channel:
-            Logging.warning(f"Channel {feed.channel} not found for feed {feed.id} in guild {feed.guild}.")
-            return
-        f = feedparser.parse(feed.url)
-        ids = [x.id for x in f.entries]
-        to_send = [x for x in f.entries if x.id not in feed.already_sent]
-        skipped_ids = len(ids) - len(to_send)
-        for entry in to_send:
-            await channel.trigger_typing()
-            await asyncio.sleep(3)
-            message = feed.template.replace("{{title}}", entry.title)
-            message = message.replace("{{link}}", entry.link)
-            await channel.send(message)
-        feed.already_sent = ids
-        if skipped_ids < 5:
-            Logging.warning(f"Skipped only {skipped_ids} entries for feed {feed.id} in channel {channel.name} ({channel.guild.name}). Is the update interval too high?")
-        feed.in_progress = False
-        feed.save()
+        async with self.locks[feed.id]:
+            try:
+                channel = self.bot.get_channel(feed.channel)
+                if not channel:
+                    Logging.warning(f"Channel {feed.channel} not found for feed {feed.id} in guild {feed.guild}.")
+                    await Logging.guild_log(feed.guild, f"I can't access the channel ({feed.channel}) for feed {feed.id})")
+                    return
+                feed.save()
+                f = feedparser.parse(feed.url)
+                ids = [x.id for x in f.entries]
+                to_send = [x for x in f.entries if x.id not in feed.already_sent]
+                skipped_ids = len(ids) - len(to_send)
+                for entry in to_send:
+                    await channel.trigger_typing()
+                    await asyncio.sleep(3)
+                    message = feed.template.replace("{{title}}", entry.title)
+                    message = message.replace("{{link}}", entry.link)
+                    await channel.send(message)
+                if len(ids) < 25:
+                    Logging.warning(f"ID count for feed {feed.id} is less than 25. Already sent: {feed.already_sent}, new: {ids}, union: {list(set(ids + feed.already_sent))}")
+                    ids = list(set(ids + feed.already_sent))
+                feed.already_sent = ids
+                if skipped_ids < 5:
+                    Logging.warning(f"Skipped only {skipped_ids} entries for feed {feed.id} in channel {channel.name} ({channel.guild.name}). Is the update interval too high?")
+                    await Logging.bot_log(f"Skipped only {skipped_ids} entries for feed {feed.id} in channel {channel.name} ({channel.guild.name}).")
+                feed.save()
+            except asyncio.CancelledError:
+                pass
 
     async def populate_ids(self, feed: RSSFeed):
         f = feedparser.parse(feed.url)
@@ -161,8 +174,8 @@ class RSS(BaseCog):
             DBUtils.ValidationType.ID_NOT_FOUND,
         ]
     ) -> RSSFeed | None:
-        rssFeed: RSSFeed
-        rssFeed, type = await DBUtils.get_from_id_or_channel(RSSFeed, inter, id)
+        feed: RSSFeed
+        feed, type = DBUtils.get_from_id_or_channel(RSSFeed, inter, id)
         response = {
             DBUtils.ValidationType.INVALID_ID:   "Invalid ID.",
             DBUtils.ValidationType.ID_NOT_FOUND: "No RSS feed found with that ID."
@@ -170,7 +183,7 @@ class RSS(BaseCog):
         if type in respond_to:
             await inter.response.send_message(response[type], ephemeral=True)
             return None
-        return rssFeed
+        return feed
 
 
 def setup(bot: commands.Bot):

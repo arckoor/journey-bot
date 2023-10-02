@@ -26,7 +26,7 @@ def is_object_id(object_id: str):
     return len(object_id) == 24 and is_hex(object_id)
 
 
-async def get_from_id_or_channel(
+def get_from_id_or_channel(
     type: StickyMessage | RSSFeed,
     inter: ApplicationCommandInteraction,
     id: str = None

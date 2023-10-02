@@ -51,8 +51,9 @@ class JourneyBot(commands.Bot):
         elif isinstance(exception, errors.MemberNotFound):
             await inter.response.send_message("I was unable to find the specified member.", ephemeral=True)
         else:
-            await inter.response.send_message("An error occurred while running this command.", ephemeral=True)
             if exception.__cause__:
                 Logging.exception("Unhandled slash command error: ", exception.__cause__)
             Logging.exception("Unhandled slash command error: ", exception)
+            if not inter.response.is_done():
+                await inter.response.send_message("An error occurred while running this command.", ephemeral=True)
         return await super().on_slash_command_error(inter, exception)

@@ -36,7 +36,7 @@ class Administration(BaseCog):
     @commands.default_member_permissions(administrator=True)
     async def restart(self, inter: ApplicationCommandInteraction):
         Logging.info(f"Restart requested by {inter.author.name}.")
-        Logging.bot_log(f"Restart requested by {inter.author.name}.")
+        await Logging.bot_log(f"Restart requested by {inter.author.name}.")
         await inter.response.send_message("Shutting down.", ephemeral=True)
         await self.bot.close()
 
@@ -47,9 +47,29 @@ class Administration(BaseCog):
         file = open("upgradeRequest", "w")
         file.close()
         Logging.info(f"Upgrade requested by {inter.author.name}.")
-        Logging.bot_log(f"Upgrade requested by {inter.author.name}.")
+        await Logging.bot_log(f"Upgrade requested by {inter.author.name}.")
         await inter.response.send_message("Upgrading.", ephemeral=True)
         await self.bot.close()
+
+    @commands.slash_command(description="Cog management.", guild_ids=[Configuration.get_master_var("ADMIN_GUILD", 0)])
+    @commands.is_owner()
+    @commands.default_member_permissions(administrator=True)
+    async def cog(self, inter: ApplicationCommandInteraction):
+        pass
+
+    @cog.sub_command(description="Reload a cog.")
+    async def reload(self, inter: ApplicationCommandInteraction, cog: str = commands.Param(description="The cog to reload.")):
+        cogs = []
+        for c in inter.bot.cogs:
+            cogs.append(c.replace("Cog", ""))
+
+        if cog in cogs:
+            self.bot.unload_extension(f"Cogs.{cog}")
+            self.bot.load_extension(f"Cogs.{cog}")
+            await inter.response.send_message(f"**{cog}** has been reloaded.", ephemeral=True)
+            await Logging.bot_log(f"**{cog}** has been reloaded by {inter.author.name}.")
+        else:
+            await inter.response.send_message("I can't find that cog.")
 
 
 def setup(bot: commands.Bot):

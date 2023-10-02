@@ -15,7 +15,6 @@ class StickyMessage(Document):
     message_limit = IntField(required=False, default=0)
     time_limit = IntField(required=False, default=0)
     delete_old_sticky = BooleanField(required=False, default=True)
-    in_progress = BooleanField(required=False, default=False)
     meta = {
         "auto_create_index_on_save": False,
         "indexes": ["+channel", "+current_id"]
@@ -29,7 +28,6 @@ class RSSFeed(Document):
     template = StringField(required=True)
     initialized = BooleanField(required=True, default=False)
     already_sent = ListField(StringField(), required=False)
-    in_progress = BooleanField(required=False, default=False)
     meta = {
         "auto_create_index_on_save": False,
         "indexes": ["+url"]

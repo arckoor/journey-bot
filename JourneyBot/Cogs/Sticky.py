@@ -1,4 +1,5 @@
 from time import time
+import asyncio
 import typing
 
 import disnake  # noqa
@@ -18,6 +19,7 @@ class Sticky(BaseCog):
         config = Configuration.get_master_var(self.__class__.__name__, {"max_messages": 5, "min_time": 15})
         self.max_messages = config.get("max_messages")
         self.min_time = config.get("min_time")
+        self.locks = {}
 
     @commands.slash_command(dm_permission=False, description="Sticky message management.")
     @commands.guild_only()
@@ -97,6 +99,7 @@ class Sticky(BaseCog):
             self.set_stick_data(stickyMessage, content=message, message_limit=message_limit, time_limit=time_limit, delete_old_sticky=delete_old_sticky)
             stickyMessage.save()
             await inter.response.send_message("Sticky message updated.", ephemeral=True)
+            await Logging.guild_log(inter.guild_id, f"The sticky message in {channel.mention} was updated by {inter.author.name} (`{inter.author.id}`)")
             Logging.info(f"Sticky message updated in channel {channel.name} ({channel.guild.name}) by {inter.author.name} ({inter.author.id})")
         else:
             if not message:
@@ -128,6 +131,7 @@ class Sticky(BaseCog):
             if using_defaults:
                 msg += f"\nYou didn't specify a value for both message-limit and time-limit, so I'm using the defaults of {message_limit} messages and {time_limit} seconds."
             await inter.response.send_message(msg, ephemeral=True)
+            await Logging.guild_log(inter.guild_id, f"A new sticky message was created in {channel.mention} by {inter.author.name} (`{inter.author.id}`)")
             Logging.info(f"Sticky message created in channel {channel.name} ({channel.guild.name}) by {inter.author.name} ({inter.author.id})")
         await self.send_stick(stickyMessage.channel, override=True)
 
@@ -147,6 +151,7 @@ class Sticky(BaseCog):
         stickyMessage.active = True
         stickyMessage.save()
         await inter.response.send_message("Sticky message started.", ephemeral=True)
+        await Logging.guild_log(inter.guild_id, f"The sticky message in {channel.mention} was started by {inter.author.name} (`{inter.author.id}`)")
         Logging.info(f"Sticky message started in channel {channel.name} ({channel.guild.name}) by {inter.author.name} ({inter.author.id})")
         await self.send_stick(channel.id, True)
 
@@ -166,6 +171,7 @@ class Sticky(BaseCog):
         stickyMessage.active = False
         stickyMessage.save()
         await inter.response.send_message("Sticky message stopped.", ephemeral=True)
+        await Logging.guild_log(inter.guild_id, f"The sticky message in {channel.mention} was stopped by {inter.author.name} (`{inter.author.id}`)")
         Logging.info(f"Sticky message stopped in channel {channel.name} ({channel.guild.name}) by {inter.author.name} ({inter.author.id})")
 
     @stick.sub_command(description="Unstick a message from the channel.")
@@ -181,6 +187,7 @@ class Sticky(BaseCog):
         await self.delete_current_stick(stickyMessage, channel)
         stickyMessage.delete()
         await inter.response.send_message("Sticky message removed.", ephemeral=True)
+        await Logging.guild_log(inter.guild_id, f"The sticky message in {channel.mention} was removed by {inter.author.name} (`{inter.author.id}`)")
         Logging.info(f"Sticky message deleted in channel {channel.name} ({channel.guild.name}) by {inter.author.name} ({inter.author.id})")
 
     @commands.Cog.listener()
@@ -191,13 +198,15 @@ class Sticky(BaseCog):
         stickies = StickyMessage.objects(channel=message.channel.id)
         if stickies:
             stickyMessage = stickies.first()
-            if stickyMessage.in_progress:
+            if stickyMessage.id not in self.locks:
+                self.locks[stickyMessage.id] = asyncio.Lock()
+            if self.locks[stickyMessage.id].locked():
                 return
-            stickyMessage.in_progress = True
-            stickyMessage.save()
-            await self.send_stick(message.channel.id)
-            stickyMessage.in_progress = False
-            stickyMessage.save()
+            try:
+                async with self.locks[stickyMessage.id]:
+                    await self.send_stick(message.channel.id)
+            except asyncio.CancelledError:
+                pass
 
     async def send_stick(self, channelId: int, override: bool = False):
         stickyMessage = StickyMessage.objects(channel=channelId).first()
@@ -274,7 +283,7 @@ class Sticky(BaseCog):
         ]
     ) -> StickyMessage | None:
         stickyMessage: StickyMessage
-        stickyMessage, type = await DBUtils.get_from_id_or_channel(StickyMessage, inter, id)
+        stickyMessage, type = DBUtils.get_from_id_or_channel(StickyMessage, inter, id)
         responses = {
             DBUtils.ValidationType.INVALID_ID:     "Invalid ID.",
             DBUtils.ValidationType.ID_NOT_FOUND:   "No sticky message found with that ID.",

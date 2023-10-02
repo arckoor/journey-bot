@@ -60,14 +60,16 @@ async def initialize(bot: commands.Bot, log_channel_id: str):
 
 
 async def bot_log(message: str = None, embed: disnake.Embed = None):
+    global BOT_LOG_CHANNEL
     if BOT_LOG_CHANNEL is not None:
         return await BOT_LOG_CHANNEL.send(content=message, embed=embed)
 
 
 async def guild_log(guild_id: int, message: str = None, embed: disnake.Embed = None):
-    guildConfig = DBUtils.get_guild_config(guild_id)
-    if guildConfig.guild_log is not None:
-        channel = BOT.get_channel(guildConfig.guild_log)
+    global BOT
+    guild_config = DBUtils.get_guild_config(guild_id)
+    if guild_config.guild_log is not None:
+        channel = BOT.get_channel(guild_config.guild_log)
         if channel is not None:
             return await channel.send(content=message, embed=embed)
 
@@ -89,6 +91,7 @@ def error(message: str):
 
 
 def exception(message: str, error: Exception):
+    global BOT
     LOGGER.error(message)
     trace = ""
     LOGGER.error(str(error))
