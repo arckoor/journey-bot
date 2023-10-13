@@ -3,16 +3,24 @@
     "BOT_LOG_CHANNEL": 0,
     "BOT_TOKEN": "",
     "COGS": [
-        "Administration",
-        "Basic",
-        "RSS",
-        "Sticky"
+        "Administration"
     ],
     "EMBED_COLOR": "0x0",
+    "EMOJI": {
+        "BAN": 0,
+        "JOIN": 0,
+        "RSS": 0,
+        "STICKY": 0,
+        "WARN": 0
+    },
+    "EMOJI_GUILD": 0,
     "ENV": "dev",
     "MONGO_URI": "",
+    "NEW_USER_THRESHOLD": {
+        "days": 14
+    },
     "RSS": {
-        "update_interval_seconds": 300
+        "update_interval_seconds": 5
     },
     "Sticky": {
         "max_messages": 5,

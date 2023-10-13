@@ -1,4 +1,4 @@
-from mongoengine import Document, StringField, IntField, BooleanField, ListField, connect, disconnect_all
+from mongoengine import Document, StringField, IntField, BooleanField, ListField, DateTimeField, connect, disconnect_all
 
 from Util import Configuration
 
@@ -27,7 +27,7 @@ class RSSFeed(Document):
     channel = IntField(required=True)
     template = StringField(required=True)
     initialized = BooleanField(required=True, default=False)
-    already_sent = ListField(StringField(), required=False)
+    latest_post = DateTimeField(required=False)
     meta = {
         "auto_create_index_on_save": False,
         "indexes": ["+url"]
@@ -43,6 +43,9 @@ class GuildConfig(Document):
         "auto_create_index_on_save": False,
         "indexes": ["+guild"]
     }
+
+
+SupportedDocumentType = StickyMessage | RSSFeed
 
 
 def init():

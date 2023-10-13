@@ -6,8 +6,7 @@ import colorama
 import disnake  # noqa
 from disnake.ext import commands
 
-from Util import Configuration
-from Database import DBUtils
+from Util import Configuration, Utils
 
 colorama.init()
 
@@ -67,7 +66,7 @@ async def bot_log(message: str = None, embed: disnake.Embed = None):
 
 async def guild_log(guild_id: int, message: str = None, embed: disnake.Embed = None):
     global BOT
-    guild_config = DBUtils.get_guild_config(guild_id)
+    guild_config = Utils.get_guild_config(guild_id)
     if guild_config.guild_log is not None:
         channel = BOT.get_channel(guild_config.guild_log)
         if channel is not None:

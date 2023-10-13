@@ -1,10 +1,12 @@
+import datetime
+import time
+
 import disnake # noqa
 from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 
 from Cogs.BaseCog import BaseCog
-from Database import DBUtils
-from Util import Logging
+from Util import Configuration, Emoji, Utils, Logging
 
 
 class ModLog(BaseCog):
@@ -34,14 +36,25 @@ class ModLog(BaseCog):
         elif not perms.embed_links:
             await inter.response.send_message("I don't have permission to embed links in that channel.", ephemeral=True)
             return
-        guild_config = DBUtils.get_guild_config(inter.guild_id)
+        guild_config = Utils.get_guild_config(inter.guild_id)
         guild_config.guild_log = channel.id
         guild_config.save()
         await inter.response.send_message(f"Mod-Log channel set to {channel.mention}.")
 
     @commands.Cog.listener()
     async def on_member_join(self, member: disnake.Member):
-        await Logging.guild_log(member.guild.id, f"{member.mention} (`{member.id}`) has joined the server.")
+        dif = (datetime.datetime.utcfromtimestamp(time.time()).replace(
+            tzinfo=datetime.timezone.utc) - member.created_at)
+        new_user_threshold = datetime.timedelta(**Configuration.get_master_var("NEW_USER_THRESHOLD", {"days": 14}))
+        minutes, _ = divmod(dif.days * 86400 + dif.seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        if dif.days > 0:
+            age = f"{dif.days} days"
+        else:
+            age = f"{hours} hours, {minutes} minutes"
+        await Logging.guild_log(
+            member.guild.id, Emoji.msg_with_emoji("JOIN", f"{member.mention} (`{member.id}`) has joined the server. Account created {age} ago. {':new:' if new_user_threshold > dif else ''}")
+        )
 
 
 def setup(bot: commands.Bot):

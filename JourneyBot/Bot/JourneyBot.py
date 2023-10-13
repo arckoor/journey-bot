@@ -3,7 +3,7 @@ from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 from disnake.ext.commands import ExtensionAlreadyLoaded, errors
 
-from Util import Configuration, Logging
+from Util import Configuration, Emoji, Logging
 
 
 class JourneyBot(commands.Bot):
@@ -13,8 +13,9 @@ class JourneyBot(commands.Bot):
         self.shutting_down = False
 
     async def on_ready(self):
-        await Logging.initialize(self, Configuration.get_master_var("BOT_LOG_CHANNEL"))
         if not self.loaded:
+            await Logging.initialize(self, Configuration.get_master_var("BOT_LOG_CHANNEL"))
+            await Emoji.initialize(self)
             for extension in Configuration.get_master_var("COGS", []):
                 try:
                     Logging.info(f"Loading {extension} cog.")
