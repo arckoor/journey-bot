@@ -53,7 +53,7 @@ class ModLog(BaseCog):
         else:
             age = f"{hours} hours, {minutes} minutes"
         await Logging.guild_log(
-            member.guild.id, Emoji.msg_with_emoji("JOIN", f"{member.mention} (`{member.id}`) has joined the server. Account created {age} ago. {':new:' if new_user_threshold > dif else ''}")
+            member.guild.id, Emoji.msg_with_emoji("JOIN", f"{member.mention} (`{member.id}`) has joined the server, account created {age} ago. {':new:' if new_user_threshold > dif else ''}")
         )
 
 

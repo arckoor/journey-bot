@@ -7,6 +7,7 @@ emojis = dict()
 BACKUPS = {
     "BAN": "🚪",
     "JOIN": "📥",
+    "REACT": "❌",
     "RSS":  "⇶",
     "STICKY": "📧",
     "WARN": "⚠"

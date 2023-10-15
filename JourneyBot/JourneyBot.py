@@ -27,7 +27,8 @@ if __name__ == "__main__":
         emojis=True,
         messages=True,
         reactions=True,
-        message_content=True
+        message_content=True,
+        moderation=True
     )
 
     args = {
