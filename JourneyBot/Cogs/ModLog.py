@@ -6,7 +6,7 @@ from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 
 from Cogs.BaseCog import BaseCog
-from Util import Configuration, Emoji, Utils, Logging
+from Util import Emoji, Utils, Logging
 
 
 class ModLog(BaseCog):
@@ -41,11 +41,19 @@ class ModLog(BaseCog):
         guild_config.save()
         await inter.response.send_message(f"Mod-Log channel set to {channel.mention}.")
 
+    @ml_configure.sub_command(name="new-threshold", description="Set the threshold for new users.")
+    async def ml_configure_new_threshold(self, inter: ApplicationCommandInteraction, threshold: int = commands.param(description="The new user threshold (in days)", ge=1)):
+        guild_config = Utils.get_guild_config(inter.guild_id)
+        guild_config.new_user_threshold = threshold
+        guild_config.save()
+        await inter.response.send_message(f"New user threshold set to {threshold} days.")
+
     @commands.Cog.listener()
     async def on_member_join(self, member: disnake.Member):
+        guild_config = Utils.get_guild_config(member.guild.id)
         dif = (datetime.datetime.utcfromtimestamp(time.time()).replace(
             tzinfo=datetime.timezone.utc) - member.created_at)
-        new_user_threshold = datetime.timedelta(**Configuration.get_master_var("NEW_USER_THRESHOLD", {"days": 14}))
+        new_user_threshold = datetime.timedelta(days=guild_config.new_user_threshold)
         minutes, _ = divmod(dif.days * 86400 + dif.seconds, 60)
         hours, minutes = divmod(minutes, 60)
         if dif.days > 0:
