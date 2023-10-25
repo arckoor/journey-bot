@@ -1,4 +1,4 @@
-from mongoengine import Document, StringField, IntField, BooleanField, ListField, DateTimeField, connect, disconnect_all
+from mongoengine import Document, StringField, IntField, FloatField, BooleanField, ListField, DateTimeField, connect, disconnect_all
 
 from Util import Configuration
 
@@ -41,6 +41,13 @@ class GuildConfig(Document):
     react_remove_greedy_limit = IntField(required=False, default=25)
     react_remove_silent_sweep_limit = IntField(required=False, default=25)
     new_user_threshold = IntField(required=False, default=14)
+    anti_spam_enabled = BooleanField(required=False, default=False)
+    anti_spam_punishment = StringField(required=False, default="mute")
+    anti_spam_max_messages = IntField(required=False, default=5)
+    anti_spam_similar_message_threshold = FloatField(required=False, default=0.95)
+    trusted_users = ListField(IntField(), required=False)
+    trusted_roles = ListField(IntField(), required=False)
+    mute_role = IntField(required=False)
     meta = {
         "auto_create_index_on_save": False,
         "indexes": ["+guild"]

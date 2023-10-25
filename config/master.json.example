@@ -16,9 +16,6 @@
     "EMOJI_GUILD": 0,
     "ENV": "dev",
     "MONGO_URI": "",
-    "NEW_USER_THRESHOLD": {
-        "days": 14
-    },
     "RSS": {
         "update_interval_seconds": 5
     },

@@ -1,3 +1,5 @@
+import io
+import datetime
 import typing
 from dataclasses import dataclass
 
@@ -76,6 +78,23 @@ def get_alternate_channel(id: int = None, name: str = None, mention: str = None,
     else:
         guild = Guild(**guild)
     return Channel(id=id, name=name, mention=mention, guild=guild)
+
+
+def make_file(bot, channel_name, messages) -> disnake.File:
+    timestamp = datetime.datetime.strftime(datetime.datetime.now(tz=datetime.timezone.utc), "%H:%M:%S")
+    out = f"recorded spam messages at {timestamp} in {channel_name}\n"
+    for msg in messages:
+        message = bot.get_message(msg.id)
+        name = message.author.name
+        reply = ""
+        if message.reference is not None:
+            reply = f" | In reply to https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.reference.message_id}"
+        timestamp = datetime.datetime.strftime(disnake.Object(message.id).created_at.astimezone(tz=datetime.timezone.utc), "%H:%M:%S")
+        out += f"{timestamp} {message.guild.id} - {message.channel.id} - {message.id} | {name} ({message.author.id}) | {message.content}{reply}\r\n"
+    buffer = io.BytesIO()
+    buffer.write(out.encode("utf-8"))
+    buffer.seek(0)
+    return disnake.File(buffer, filename="Spam messages archive.txt")
 
 
 # https://stackoverflow.com/a/16247152/12203337

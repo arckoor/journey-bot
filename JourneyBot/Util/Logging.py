@@ -4,6 +4,7 @@ from logging.handlers import TimedRotatingFileHandler
 import colorama
 
 import disnake  # noqa
+from disnake import Forbidden
 from disnake.ext import commands
 
 from Util import Configuration, Utils
@@ -64,13 +65,16 @@ async def bot_log(message: str = None, embed: disnake.Embed = None):
         return await BOT_LOG_CHANNEL.send(content=message, embed=embed)
 
 
-async def guild_log(guild_id: int, message: str = None, embed: disnake.Embed = None):
+async def guild_log(guild_id: int, message: str = None, embed: disnake.Embed = None, file: disnake.File = None):
     global BOT
     guild_config = Utils.get_guild_config(guild_id)
     if guild_config.guild_log is not None:
         channel = BOT.get_channel(guild_config.guild_log)
         if channel is not None:
-            return await channel.send(content=message, embed=embed)
+            try:
+                return await channel.send(content=message, embed=embed, file=file)
+            except Forbidden:
+                LOGGER.error(f"Failed to send guild log message to {channel.id} in guild {guild_id}.")
 
 
 def debug(message: str):

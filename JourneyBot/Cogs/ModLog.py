@@ -13,18 +13,14 @@ class ModLog(BaseCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
 
-    @commands.slash_command(name="mod-log", description="Mod-Log management", dm_permission=False)
+    @commands.slash_command(name="mod-log-config", description="Mod-Log management", dm_permission=False)
     @commands.guild_only()
     @commands.bot_has_permissions(read_message_history=True, embed_links=True, send_messages=True, view_channel=True)
     @commands.default_member_permissions(ban_members=True)
-    async def mod_log(self, inter: ApplicationCommandInteraction):
+    async def ml_config(self, inter: ApplicationCommandInteraction):
         pass
 
-    @mod_log.sub_command_group(name="configure", description="Configure the mod-log.")
-    async def ml_configure(self, inter: ApplicationCommandInteraction):
-        pass
-
-    @ml_configure.sub_command(name="channel", description="Set the mod-log channel.")
+    @ml_config.sub_command(name="channel", description="Set the mod-log channel.")
     async def ml_configure_channel(self, inter: ApplicationCommandInteraction, channel: disnake.TextChannel = commands.Param(description="The channel to set as the Mod-Log channel.")):
         perms = channel.permissions_for(inter.guild.me)
         if not perms.view_channel:
@@ -41,7 +37,7 @@ class ModLog(BaseCog):
         guild_config.save()
         await inter.response.send_message(f"Mod-Log channel set to {channel.mention}.")
 
-    @ml_configure.sub_command(name="new-threshold", description="Set the threshold for new users.")
+    @ml_config.sub_command(name="new-threshold", description="Set the threshold for new users.")
     async def ml_configure_new_threshold(self, inter: ApplicationCommandInteraction, threshold: int = commands.param(description="The new user threshold (in days)", ge=1)):
         guild_config = Utils.get_guild_config(inter.guild_id)
         guild_config.new_user_threshold = threshold

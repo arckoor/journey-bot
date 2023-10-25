@@ -8,7 +8,6 @@ from disnake.ext import commands
 
 from Cogs.BaseCog import BaseCog
 from Views import Embed
-from Views.Confirm import Confirm
 from Util import Utils, Logging
 from Util.Emoji import msg_with_emoji
 
@@ -208,61 +207,6 @@ class ReactRemove(BaseCog):
             await inter.response.send_message(f"Re-included {', '.join(included)} in remove-reacts.")
         else:
             await inter.response.send_message("All channels are already included in remove-reacts.")
-
-    async def silent_sweep(self, guild: disnake.Guild, user: disnake.User):
-        guild_config = Utils.get_guild_config(guild.id)
-        channels = [x for x in guild.text_channels if x.id not in guild_config.react_remove_excluded_channels]
-        reaction_map = {}
-        msg_cnt = 0
-        reaction_cnt = 0
-        for channel in channels:
-            try:
-                history = await channel.history(limit=guild_config.react_remove_silent_sweep_limit, oldest_first=False).flatten()
-                if not history:
-                    continue
-                reaction_map[channel] = {}
-                for message in history:
-                    msg_cnt += 1
-                    for reaction in message.reactions:
-                        if user in await reaction.users().flatten():
-                            if reaction.emoji not in reaction_map[channel]:
-                                reaction_map[channel][reaction.emoji] = []
-                            reaction_map[channel][reaction.emoji].append(reaction)
-                            reaction_cnt += 1
-            except Forbidden:
-                pass
-        reaction_map = {x: reaction_map[x] for x in reaction_map if reaction_map[x]}
-        return reaction_map, msg_cnt, reaction_cnt
-
-    @commands.Cog.listener()
-    async def on_member_ban(self, guild: disnake.Guild, user: disnake.User):
-        channel = guild.get_channel(Utils.get_guild_config(guild.id).guild_log)
-        if not channel:
-            return
-        reaction_map, msg_cnt, reaction_cnt = await self.silent_sweep(guild, user)
-        if not reaction_map:
-            return
-
-        async def yes(inter: disnake.Interaction):
-            await inter.response.send_message(content="Okay, I will remove the reactions.")
-            for c in reaction_map:
-                for reaction in reaction_map[c]:
-                    for react in reaction_map[c][reaction]:
-                        await react.remove(user)
-            await Logging.guild_log(
-                inter.guild_id, msg_with_emoji("REACT", f"{user.name} (`{user.id}`) had {reaction_cnt} reaction(s) removed from {msg_cnt} message(s) by {inter.author.name} (`{inter.author.id}`)"))
-
-        async def no(inter: disnake.Interaction):
-            await inter.response.send_message(content="Okay, I won't remove the reactions.")
-
-        embed = Embed.default_embed()
-        for c in reaction_map:
-            embed.add_field(name=c.mention, value="\n".join([f"{reaction} - {len(reaction_map[c][reaction])} reaction(s)" for reaction in reaction_map[c]]), inline=False)
-        await channel.send(
-            content=msg_with_emoji("BAN", f"{user.mention} was banned. Would you like to remove their reactions?"),
-            embed=embed,
-            view=Confirm(guild.id, yes, no, lambda *args: None, None)
-        )
 
 
 def setup(bot: commands.Bot):
