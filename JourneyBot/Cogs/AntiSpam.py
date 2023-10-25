@@ -78,9 +78,10 @@ class Pool:
         self.config["max_spam_messages"] = guild_config.anti_spam_max_messages
         self.config["similar_message_threshold"] = guild_config.anti_spam_similar_message_threshold
         self.config["time_frame"] = guild_config.anti_spam_time_frame
-        for bucket in self.pool.values():
-            bucket.set_max_size(self.config["max_spam_messages"])
-            bucket.set_time_frame(self.config["time_frame"])
+        for user_id in self.pool:
+            for bucket in self.pool[user_id]:
+                bucket.set_max_size(self.config["max_spam_messages"])
+                bucket.set_time_frame(self.config["time_frame"])
 
     def add_message(self, message: Message) -> tuple[bool, Bucket, float]:
         if message.author.id not in self.pool:
