@@ -7,8 +7,7 @@ import Levenshtein
 
 import disnake  # noqa
 from disnake import ApplicationCommandInteraction, Message, Forbidden
-from disnake.ext import commands
-from disnake.ext import tasks
+from disnake.ext import commands, tasks
 
 from Cogs.BaseCog import BaseCog
 from Views import Embed
@@ -76,7 +75,7 @@ class Pool:
         self.config["max_spam_messages"] = guild_config.anti_spam_max_messages
         self.config["similar_message_threshold"] = guild_config.anti_spam_similar_message_threshold
         for bucket in self.pool.values():
-            bucket.max_size = self.config["max_spam_messages"]
+            bucket.set_max_size(self.config["max_spam_messages"])
 
     def add_message(self, message: Message) -> tuple[bool, Bucket, float]:
         if message.author.id not in self.pool:
@@ -363,8 +362,8 @@ class AntiSpam(BaseCog):
                     msg = self.bot.get_message(message.id)
                     if msg:
                         await msg.delete()
-                except Exception as exce:
-                    print(exce)
+                except Exception as e:
+                    Logging.error(f"Anti-spam | clean_user | {e}")
         pool.remove_user(user_id)
 
 
