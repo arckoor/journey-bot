@@ -36,6 +36,9 @@ class Bucket:
         if len(self.bucket) > self.max_size:
             self.bucket = self.bucket[-self.max_size:]
 
+    def set_time_frame(self, time_limit: int):
+        self.time_limit = time_limit
+
     def __iter__(self):
         return iter(self.bucket)
 
@@ -74,8 +77,10 @@ class Pool:
         guild_config = Utils.get_guild_config(self.guild_id)
         self.config["max_spam_messages"] = guild_config.anti_spam_max_messages
         self.config["similar_message_threshold"] = guild_config.anti_spam_similar_message_threshold
+        self.config["time_frame"] = guild_config.anti_spam_time_frame
         for bucket in self.pool.values():
             bucket.set_max_size(self.config["max_spam_messages"])
+            bucket.set_time_frame(self.config["time_frame"])
 
     def add_message(self, message: Message) -> tuple[bool, Bucket, float]:
         if message.author.id not in self.pool:
@@ -106,7 +111,7 @@ class Pool:
             return new_bucket, 0
 
     def get_new_bucket(self, user_id):
-        new_bucket = Bucket(self.config["max_spam_messages"], user_id, 300, self.remove_empty_bucket)  # TODO should this be the same as line 98?
+        new_bucket = Bucket(self.config["max_spam_messages"], user_id, self.config["time_frame"], self.remove_empty_bucket)  # TODO should this be the same as line 98?
         self.pool[user_id].append(new_bucket)
         return new_bucket
 
@@ -218,10 +223,11 @@ class AntiSpam(BaseCog):
     async def as_configure_punishment(
         self,
         inter: ApplicationCommandInteraction,
-        punishment: str = commands.Param(description="punishment", choices=["mute", "ban"]),
-        mute_role: disnake.Role = commands.Param(description="mute-role", default=None),
-        max_spam_messages: int = commands.Param(description="max-spam-messages", ge=2),
-        similarity_threshold: float = commands.Param(description="similarity-threshold", gt=0.0, le=1.0),
+        punishment: str = commands.Param(name="punishment", description="The punishment for a violation.", choices=["mute", "ban"]),
+        mute_role: disnake.Role = commands.Param(name="mute-role", description="The role to assign to muted users.", default=None),
+        max_spam_messages: int = commands.Param(name="max-spam-messages", description="The number of similar messages to trigger a violation.", ge=2, default=5),
+        similarity_threshold: float = commands.Param(name="similarity-threshold", description="The threshold for when a message is considered similar.", gt=0.0, le=1.0, default=0.9),
+        time_frame: int = commands.Param(name="time-frame", description="For how long a message is considered for (in seconds).", ge=1, default=300)
     ):
         guild_config = Utils.get_guild_config(inter.guild_id)
         if punishment == "mute":
@@ -239,6 +245,7 @@ class AntiSpam(BaseCog):
         guild_config.anti_spam_punishment = punishment
         guild_config.anti_spam_max_messages = max_spam_messages
         guild_config.anti_spam_similar_message_threshold = similarity_threshold
+        guild_config.anti_spam_time_frame = time_frame
         guild_config.save()
         await inter.response.send_message(f"Punishment set to {punishment}.")
         if inter.guild_id in self.pools:
