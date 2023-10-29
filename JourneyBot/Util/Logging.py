@@ -1,3 +1,4 @@
+import sys
 import traceback
 import logging
 from logging.handlers import TimedRotatingFileHandler
@@ -44,10 +45,13 @@ def setup_logging():
     DISCORD_LOGGER.addHandler(discord_handler)
 
     LOGGER.setLevel(logging.DEBUG)
-    bot_handler = logging.FileHandler(filename="./logs/journey-bot.log", encoding="utf-8", mode="a")
     bot_handler = TimedRotatingFileHandler(filename="logs/journey-bot.log", when="midnight", backupCount=30, encoding="utf-8")
     bot_handler.setFormatter(ColoredFormatter("[%(asctime)s] [%(levelname)s] - %(message)s"))
     LOGGER.addHandler(bot_handler)
+    if Configuration.is_dev_env():
+        stdout_handler = logging.StreamHandler(stream=sys.stdout)
+        stdout_handler.setLevel(logging.WARNING)
+        LOGGER.addHandler(stdout_handler)
 
 
 async def initialize(bot: commands.Bot, log_channel_id: str):

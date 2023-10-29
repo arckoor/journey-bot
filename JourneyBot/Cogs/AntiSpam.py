@@ -255,13 +255,13 @@ class AntiSpam(BaseCog):
             return
         guild_config = Utils.get_guild_config(inter.guild_id)
         if punishment == "mute":
-            if guild_config.mute_role:
+            if not mute_role and guild_config.mute_role:
                 mute_role = inter.guild.get_role(guild_config.mute_role)
             if not mute_role:
                 await inter.response.send_message("You must specify a mute role.", ephemeral=True)
                 return
-            elif not mute_role.is_assignable():
-                await inter.response.send_message("I cannot assign the mute role.", ephemeral=True)
+            if not inter.me.guild_permissions.manage_roles:
+                await inter.response.send_message("I don't have permission to manage and assign roles.", ephemeral=True)
                 return
             guild_config.mute_role = mute_role.id
         else:
@@ -269,9 +269,9 @@ class AntiSpam(BaseCog):
                 await inter.response.send_message("I don't have permission to ban members.", ephemeral=True)
                 return
         guild_config.anti_spam_punishment = punishment
-        guild_config.anti_spam_max_messages = max_spam_messages
-        guild_config.anti_spam_similar_message_threshold = similarity_threshold
-        guild_config.anti_spam_time_frame = time_frame
+        guild_config.anti_spam_max_messages = Utils.coalesce(max_spam_messages, guild_config.anti_spam_max_messages)
+        guild_config.anti_spam_similar_message_threshold = Utils.coalesce(similarity_threshold, guild_config.anti_spam_similar_message_threshold)
+        guild_config.anti_spam_time_frame = Utils.coalesce(time_frame, guild_config.anti_spam_time_frame)
         guild_config.save()
         await inter.response.send_message(f"Punishment set to {punishment}.")
         if inter.guild_id in self.pools:
@@ -329,7 +329,7 @@ class AntiSpam(BaseCog):
     @commands.is_owner()
     @commands.guild_only()
     @commands.default_member_permissions(administrator=True)
-    async def pool(self, inter: disnake.ApplicationCommandInteraction, id: int = commands.Param(name="id", description="The guild id to print the pool of.", default=None)):
+    async def pool(self, inter: disnake.ApplicationCommandInteraction, id: int = commands.Param(description="The guild id to print the pool of.", large=True, default=None)):
         if not id:
             id = inter.guild_id
         if id not in self.pools:
@@ -355,27 +355,24 @@ class AntiSpam(BaseCog):
         spam, bucket, confidence = pool.add_message(message)
         if spam:
             Logging.info(f"Detected spam by user {message.author.name} (`{message.author.id}`) with confidence {confidence}.")
-            file = Utils.make_file(self.bot, message.channel.name, (msg for msg in bucket))
+            file = None
             if guild_config.anti_spam_punishment == "mute":
                 mute_role = message.guild.get_role(guild_config.mute_role)
                 if not mute_role:
                     await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"Could not find mute role {guild_config.mute_role}."))
                     return
-                elif not mute_role.is_assignable():
-                    await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"I cannot assign mute role {mute_role.name}."))
-                    return
                 try:
                     await message.author.add_roles(mute_role, reason=f"Spam detected in {message.channel.name}")
+                    file = Utils.make_file(self.bot, message.channel.name, (msg for msg in bucket))
                     await self.clean_user(message.guild.id, message.author.id)
                 except Forbidden:
                     await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"I cannot assign mute role {mute_role.name} to {message.author.name}."))
                     return
             else:
-                if not message.guild.me.guild_permissions.ban_members:
-                    await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", "I cannot ban members."))
-                    return
                 try:
                     await message.guild.ban(message.author, reason=f"Spam detected in #{message.channel.name}", clean_history_duration=0)
+                    file = Utils.make_file(self.bot, message.channel.name, (msg for msg in bucket))
+                    await self.clean_user(message.guild.id, message.author.id)
                 except Forbidden:
                     await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"I cannot ban {message.author.name}."))
             msg = msg_with_emoji(
@@ -384,13 +381,6 @@ class AntiSpam(BaseCog):
                 f"{confidence:.3f}".rstrip("0").rstrip("."),
             )
             await Logging.guild_log(message.guild.id, message=msg, file=file)
-
-    @commands.Cog.listener()
-    async def on_member_ban(self, guild: disnake.Guild, user: disnake.User):
-        if guild.id not in self.pools:
-            return
-        await self.clean_user(guild.id, user.id)
-        self.pools[guild.id].remove_user(user.id)
 
     async def clean_user(self, guild_id: int, user_id: int):
         pool = self.pools[guild_id]

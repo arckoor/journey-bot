@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import disnake # noqa
 from disnake import ApplicationCommandInteraction
+from disnake.ext.commands import Bot
 
 from enum import Enum
 from Database.DBConnector import SupportedDocumentType, GuildConfig
@@ -80,11 +81,13 @@ def get_alternate_channel(id: int = None, name: str = None, mention: str = None,
     return Channel(id=id, name=name, mention=mention, guild=guild)
 
 
-def make_file(bot, channel_name, messages) -> disnake.File:
+def make_file(bot: Bot, channel_name, messages) -> disnake.File:
     timestamp = datetime.datetime.strftime(datetime.datetime.now(tz=datetime.timezone.utc), "%H:%M:%S")
     out = f"recorded spam messages at {timestamp} in {channel_name}\n"
     for msg in messages:
         message = bot.get_message(msg.id)
+        if not message:
+            continue
         name = message.author.name
         reply = ""
         if message.reference is not None:
