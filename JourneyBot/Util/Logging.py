@@ -1,5 +1,6 @@
 import sys
 import traceback
+import datetime
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import colorama
@@ -72,11 +73,12 @@ async def bot_log(message: str = None, embed: disnake.Embed = None):
 async def guild_log(guild_id: int, message: str = None, embed: disnake.Embed = None, file: disnake.File = None):
     global BOT
     guild_config = Utils.get_guild_config(guild_id)
+    timestamp = datetime.datetime.strftime(datetime.datetime.now(tz=datetime.timezone.utc), "%H:%M:%S")
     if guild_config.guild_log is not None:
         channel = BOT.get_channel(guild_config.guild_log)
         if channel is not None:
             try:
-                return await channel.send(content=message, embed=embed, file=file)
+                return await channel.send(content=f"[`{timestamp}`] " + message, embed=embed, file=file)
             except Forbidden:
                 LOGGER.error(f"Failed to send guild log message to {channel.id} in guild {guild_id}.")
 

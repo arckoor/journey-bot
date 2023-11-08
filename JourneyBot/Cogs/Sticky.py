@@ -100,7 +100,7 @@ class Sticky(BaseCog):
             self.set_stick_data(stickyMessage, content=message, message_limit=message_limit, time_limit=time_limit, delete_old_sticky=delete_old_sticky)
             stickyMessage.save()
             await inter.response.send_message("Sticky message updated.", ephemeral=True)
-            await Logging.guild_log(inter.guild_id, f"A sticky message in {channel.mention} was updated by {inter.author.name} (`{inter.author.id}`)")
+            await Logging.guild_log(inter.guild_id, msg_with_emoji("STICKY", f"A sticky message in {channel.mention} was updated by {inter.author.name} (`{inter.author.id}`)"))
             Logging.info(f"Sticky message updated in channel {channel.name} ({channel.guild.name}) by {inter.author.name} ({inter.author.id})")
         else:
             if not message:

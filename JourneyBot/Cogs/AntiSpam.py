@@ -1,5 +1,6 @@
 
 import time
+import string
 import re
 import textwrap
 import unicodedata
@@ -27,6 +28,7 @@ class Bucket:
     def __init__(self, max_size: int, user_id: int, time_limit: int, remove_callback):
         self.bucket: list[PoolMessage] = []
         self.size_overflow_buffer = 3
+        self.last_score = 0
         self.max_size = 0
         self.time_limit = 0
         self.user_id = user_id
@@ -52,8 +54,9 @@ class Bucket:
     def __str__(self):
         return textwrap.indent("\n".join([f"{msg.content}" for msg in self.bucket]), prefix=" "*4)
 
-    def add_message(self, message: PoolMessage):
+    def add_message(self, message: PoolMessage, score: float):
         self.bucket.append(message)
+        self.last_score = score
         if len(self.bucket) > self.max_size:
             self.bucket.pop(0)
 
@@ -93,7 +96,7 @@ class Pool:
             self.pool[message.author.id] = []
         content = self.preprocess_message(message)
         closest_bucket, confidence = self.find_closest_bucket(content, message.author.id)
-        closest_bucket.add_message(PoolMessage(content, message.id, time.time()))
+        closest_bucket.add_message(PoolMessage(content, message.id, time.time()), confidence)
         for c_level, max_size in self.config["violation_trigger"]:
             if confidence >= c_level and len(closest_bucket) >= max_size:
                 return True, closest_bucket, confidence
@@ -118,13 +121,14 @@ class Pool:
             return new_bucket, 0
 
     def get_new_bucket(self, user_id):
-        new_bucket = Bucket(self.config["max_spam_messages"], user_id, self.config["time_frame"], self.remove_empty_bucket)  # TODO should this be the same as line 98?
+        new_bucket = Bucket(self.config["max_spam_messages"], user_id, self.config["time_frame"], self.remove_empty_bucket)
         self.pool[user_id].append(new_bucket)
         return new_bucket
 
     def remove_empty_bucket(self, user_id: int, bucket: Bucket):
         if user_id not in self.pool:
             return
+        bucket.remove_old_messages.cancel()
         self.pool[user_id].remove(bucket)
         if not self.pool[user_id]:
             del self.pool[user_id]
@@ -132,7 +136,6 @@ class Pool:
     def remove_user(self, user_id: int):
         if user_id in self.pool:
             for bucket in self.pool[user_id]:
-                bucket.remove_old_messages.stop()
                 self.remove_empty_bucket(user_id, bucket)
                 del bucket
 
@@ -161,6 +164,7 @@ class Pool:
             msg = message.content.lower()
             msg = "".join(replacements.get(char, char) for char in msg)
             msg = "".join(unicodedata.normalize("NFKD", char).encode("ASCII", "ignore").decode() for char in msg)
+            msg = msg.translate(str.maketrans("", "", string.punctuation))
             msg = "".join(reversed(re.sub(r"\A\d+.*", "", "".join(reversed(msg)))))
         return msg
 
@@ -171,7 +175,7 @@ class Pool:
         for user_id, buckets in self.pool.items():
             msg += f"User {user_id}:\n"
             for bucket in buckets:
-                msg += f"  Bucket: \n{str(bucket)}\n"
+                msg += f"  Bucket: ({bucket.last_score}) \n{str(bucket)}\n"
         msg += "```"
         return msg
 
@@ -206,6 +210,22 @@ class AntiSpam(BaseCog):
             embed.add_field(name="Trusted roles", value="\n".join([f"<@&{role}>" for role in guild_config.trusted_roles]) or "None", inline=True)
         await inter.response.send_message(embed=embed)
 
+    @as_config.sub_command(name="help", description="Show the help for the anti-spam module.")
+    async def as_help(self, inter: ApplicationCommandInteraction):
+        embed = Embed.default_embed(
+            title="Anti-Spam Help",
+            description="Help for the anti-spam module.",
+            author=inter.author.name,
+            icon_url=inter.author.avatar.url
+        )
+        embed.add_field(name="max-spam-messages", value="The number of similar messages to trigger a violation. Multiple comma-separated values are allowed. For example `6, 4, 2`.", inline=False)
+        embed.add_field(name="similarity-threshold", value="The threshold for when a message is considered similar. " +
+                        "Multiple comma-separated values are allowed. For example. `.9, .95, .99`.", inline=False)
+        embed.add_field(name="Correlation between max-spam-messages and similarity-threshold",
+                        value="The first value of max-spam-messages corresponds to the first value of similarity-threshold, the second to the second, etc. " +
+                        "- In the example above, a user would get punished for 6 messages that are .9 similar, but already for 4 if they are .95 similar and so on.", inline=False)
+        await inter.response.send_message(embed=embed)
+
     @as_config.sub_command(name="module-enable", description="Enable the anti-spam module.")
     async def as_enable(self, inter: ApplicationCommandInteraction):
         guild_config = Utils.get_guild_config(inter.guild_id)
@@ -236,7 +256,7 @@ class AntiSpam(BaseCog):
             name="max-spam-messages", description="The number of similar messages to trigger a violation. Multiple comma-separated values are allowed.", default="5"),
         similarity_threshold: str = commands.Param(
             name="similarity-threshold", description="The threshold for when a message is considered similar. Multiple comma-separated values are allowed.", default="0.9"),
-        time_frame: int = commands.Param(name="time-frame", description="For how long a message is considered for (in seconds).", ge=1, default=300)
+        time_frame: int = commands.Param(name="time-frame", description="For how long a message is taken into account (in seconds).", ge=1, default=300)
     ):
         try:
             max_spam_messages = self.parse_string_to_list(max_spam_messages, int)
@@ -333,7 +353,7 @@ class AntiSpam(BaseCog):
         if not id:
             id = inter.guild_id
         if id not in self.pools:
-            await inter.response.send_message("Pool is currently empty", ephemeral=True)
+            await inter.response.send_message("Pool is currently empty.", ephemeral=True)
             return
         await inter.response.send_message(self.pools[id].print_pool())
 
@@ -358,15 +378,12 @@ class AntiSpam(BaseCog):
             file = None
             if guild_config.anti_spam_punishment == "mute":
                 mute_role = message.guild.get_role(guild_config.mute_role)
-                if not mute_role:
-                    await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"Could not find mute role {guild_config.mute_role}."))
-                    return
                 try:
-                    await message.author.add_roles(mute_role, reason=f"Spam detected in {message.channel.name}")
+                    await message.author.add_roles(mute_role, reason=f"Spam detected in #{message.channel.name}")
                     file = Utils.make_file(self.bot, message.channel.name, (msg for msg in bucket))
                     await self.clean_user(message.guild.id, message.author.id)
                 except Forbidden:
-                    await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"I cannot assign mute role {mute_role.name} to {message.author.name}."))
+                    await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"I cannot assign the mute role {mute_role.name} (`{mute_role.id}`) to {message.author.name}."))
                     return
             else:
                 try:
@@ -375,12 +392,21 @@ class AntiSpam(BaseCog):
                     await self.clean_user(message.guild.id, message.author.id)
                 except Forbidden:
                     await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"I cannot ban {message.author.name}."))
+                    return
             msg = msg_with_emoji(
                 "BAN",
                 f"{message.author.name} (`{message.author.id}`) has been {'muted' if guild_config.anti_spam_punishment == 'mute' else 'banned'} for spam. Confidence: " +
                 f"{confidence:.3f}".rstrip("0").rstrip("."),
             )
             await Logging.guild_log(message.guild.id, message=msg, file=file)
+
+    @commands.Cog.listener()
+    async def on_member_ban(self, guild: disnake.Guild, user: disnake.User):
+        if guild.id not in self.pools:
+            return
+        if user.id in self.pools[guild.id].pool:
+            Logging.info(f"{user.name} ({user.id}) has been banned. They had the following pools: " +
+                         f"{', '.join(f'{len(bucket)}: {bucket.last_score:.3f}' for bucket in self.pools[guild.id].pool[user.id])}")
 
     async def clean_user(self, guild_id: int, user_id: int):
         pool = self.pools[guild_id]
