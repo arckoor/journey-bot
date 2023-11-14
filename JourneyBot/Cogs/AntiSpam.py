@@ -302,12 +302,12 @@ class AntiSpam(BaseCog):
     async def as_configure_punishment(
         self,
         inter: ApplicationCommandInteraction,
-        punishment:           str = commands.Param(name="punishment", description="The punishment for a violation.", choices=["mute", "ban"]),
-        mute_role:   disnake.Role = commands.Param(name="mute-role", description="The role to assign to muted users.", default=None),
-        max_spam_messages:    str = commands.Param(name="max-spam-messages", description="The number of similar messages to trigger a violation. Multiple comma-separated values are allowed."),
-        similarity_threshold: str = commands.Param(name="similarity-threshold", description="The threshold for when a message is considered similar. Multiple comma-separated values are allowed."),
-        sim_re_ban_threshold: int = commands.Param(name="similarity-re-ban-threshold", description="The threshold for a message to lead to an immediate re-ban. Set > 1 to disable.", ge=0, le=2),
-        time_frame:           int = commands.Param(name="time-frame", description="For how long a message is taken into account (in seconds).", ge=10)
+        punishment:             str = commands.Param(name="punishment", description="The punishment for a violation.", choices=["mute", "ban"]),
+        mute_role:     disnake.Role = commands.Param(name="mute-role", description="The role to assign to muted users.", default=None),
+        max_spam_messages:      str = commands.Param(name="max-spam-messages", description="The number of similar messages to trigger a violation. Multiple comma-separated values are allowed."),
+        similarity_threshold:   str = commands.Param(name="similarity-threshold", description="The threshold for when a message is considered similar. Multiple comma-separated values are allowed."),
+        sim_re_ban_threshold: float = commands.Param(name="similarity-re-ban-threshold", description="The threshold for a message to lead to an immediate re-ban. Set > 1 to disable.", ge=0, le=2),
+        time_frame:             int = commands.Param(name="time-frame", description="For how long a message is taken into account (in seconds).", ge=10)
     ):
         try:
             max_spam_messages = self.parse_string_to_list(max_spam_messages, int)
