@@ -108,9 +108,11 @@ class Pool:
                 bucket.set_time_frame(self.config["time_frame"])
 
     def add_message(self, message: Message) -> tuple[bool, Bucket, float]:
+        content = self.preprocess_message(message)
+        if not content:
+            return False, None, None
         if message.author.id not in self.pool:
             self.pool[message.author.id] = []
-        content = self.preprocess_message(message)
         closest_bucket, confidence = self.find_closest_bucket(content, message.author.id)
         closest_bucket.add_message(PoolMessage(content, message.id, time.time()), confidence)
         is_recently_punished, is_recently_punished_confidence = self.is_recently_punished(content)
@@ -169,7 +171,10 @@ class Pool:
 
     def preprocess_message(self, message: Message):
         if not message.content:
-            msg = ", ".join(attachment.url for attachment in message.attachments)
+            if message.attachments:
+                msg = ", ".join(attachment.url for attachment in message.attachments)
+            else:
+                return None
         else:
             replacements = {
                 "𝘢": "a",
