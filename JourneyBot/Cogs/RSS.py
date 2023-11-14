@@ -148,7 +148,8 @@ class RSS(BaseCog):
                         message = message.replace("{{link}}", entry.link)
                         await channel.send(message)
                         sent += 1
-                feed.latest_post = max_latest_post
+                if max_latest_post > latest_post:
+                    feed.latest_post = max_latest_post
                 skipped = len(f.entries) - sent
                 if skipped < 5:
                     Logging.warning(f"Skipped only {skipped} entries for feed {feed.id} in channel {channel.name} ({channel.guild.name}). Is the update interval too high?")

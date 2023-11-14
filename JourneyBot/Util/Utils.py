@@ -8,7 +8,7 @@ from disnake import ApplicationCommandInteraction
 from disnake.ext.commands import Bot
 
 from enum import Enum
-from Database.DBConnector import SupportedDocumentType, GuildConfig
+from Database.DBConnector import SupportedDocumentType, ConfigDocumentType, GuildConfig, AntiSpamConfig
 
 
 class ValidationType(Enum):
@@ -62,12 +62,20 @@ def get_document_from_id_or_channel(
     return document, ValidationType.OK
 
 
+def get_config(id: int, type: ConfigDocumentType) -> ConfigDocumentType:
+    if not type.objects(guild=id):
+        document = type(guild=id)
+        document.save()
+        return document
+    return type.objects(guild=id).first()
+
+
 def get_guild_config(id: int) -> GuildConfig:
-    if not GuildConfig.objects(guild=id):
-        guild = GuildConfig(guild=id)
-        guild.save()
-        return guild
-    return GuildConfig.objects(guild=id).first()
+    return get_config(id, GuildConfig)
+
+
+def get_anti_spam_config(id: int) -> AntiSpamConfig:
+    return get_config(id, AntiSpamConfig)
 
 
 def get_alternate_channel(id: int = None, name: str = None, mention: str = None, guild: dict = None) -> Channel:

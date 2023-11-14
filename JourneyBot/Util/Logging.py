@@ -14,6 +14,7 @@ from Util import Configuration, Utils
 colorama.init()
 
 LOGGER = logging.getLogger("journey-bot")
+POOL_LOGGER = logging.getLogger("pool")
 DISCORD_LOGGER = logging.getLogger("disnake")
 
 BOT: commands.Bot = None
@@ -54,6 +55,11 @@ def setup_logging():
         stdout_handler.setLevel(logging.WARNING)
         LOGGER.addHandler(stdout_handler)
 
+    POOL_LOGGER.setLevel(logging.DEBUG)
+    pool_handler = TimedRotatingFileHandler(filename="logs/pool.log", when="midnight", backupCount=7, encoding="utf-8")
+    pool_handler.setFormatter(ColoredFormatter("[%(asctime)s] [%(levelname)s] - %(message)s"))
+    POOL_LOGGER.addHandler(pool_handler)
+
 
 async def initialize(bot: commands.Bot, log_channel_id: str):
     global BOT_LOG_CHANNEL, BOT
@@ -78,7 +84,7 @@ async def guild_log(guild_id: int, message: str = None, embed: disnake.Embed = N
         channel = BOT.get_channel(guild_config.guild_log)
         if channel is not None:
             try:
-                return await channel.send(content=f"[`{timestamp}`] " + message, embed=embed, file=file)
+                return await channel.send(content=f"[`{timestamp}`]  " + message, embed=embed, file=file)
             except Forbidden:
                 LOGGER.error(f"Failed to send guild log message to {channel.id} in guild {guild_id}.")
 
@@ -109,3 +115,7 @@ def exception(message: str, error: Exception):
         trace = f"{trace}\n{line}"
     LOGGER.error(trace)
     BOT.loop.create_task(bot_log(embed=disnake.Embed(title="Exception", description=f"```Traceback:\n{trace}\n{str(error)}```", color=disnake.Color.red())))
+
+
+def pool_log(message: str):
+    POOL_LOGGER.info(message)

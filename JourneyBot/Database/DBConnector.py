@@ -1,5 +1,4 @@
-from mongoengine import Document, StringField, IntField, FloatField, BooleanField, ListField, DateTimeField, connect, disconnect_all
-
+from mongoengine import Document, StringField, IntField, FloatField, BooleanField, ListField, MapField, DateTimeField, connect, disconnect_all
 from Util import Configuration
 
 
@@ -41,14 +40,24 @@ class GuildConfig(Document):
     react_remove_greedy_limit = IntField(required=False, default=25)
     react_remove_silent_sweep_limit = IntField(required=False, default=25)
     new_user_threshold = IntField(required=False, default=14)
-    anti_spam_enabled = BooleanField(required=False, default=False)
-    anti_spam_punishment = StringField(required=False, default="mute")
-    anti_spam_max_messages = ListField(IntField(), required=False, default=[5])
-    anti_spam_similar_message_threshold = ListField(FloatField(), required=False, default=[0.95])
-    anti_spam_time_frame = IntField(required=False, default=300)
+    meta = {
+        "auto_create_index_on_save": False,
+        "indexes": ["+guild"]
+    }
+
+
+class AntiSpamConfig(Document):
+    guild = IntField(required=True)
+    enabled = BooleanField(required=False, default=False)
+    punishment = StringField(required=False, default="mute")
+    mute_role = IntField(required=False)
+    max_messages = ListField(IntField(), required=False, default=[5])
+    similar_message_threshold = ListField(FloatField(), required=False, default=[0.95])
+    similar_message_re_ban_threshold = FloatField(required=False, default=0.95)
+    time_frame = IntField(required=False, default=300)
     trusted_users = ListField(IntField(), required=False)
     trusted_roles = ListField(IntField(), required=False)
-    mute_role = IntField(required=False)
+    recently_punished = ListField(MapField(field=StringField()), required=False, default=[])
     meta = {
         "auto_create_index_on_save": False,
         "indexes": ["+guild"]
@@ -56,6 +65,7 @@ class GuildConfig(Document):
 
 
 SupportedDocumentType = StickyMessage | RSSFeed
+ConfigDocumentType = GuildConfig | AntiSpamConfig
 
 
 def init():
