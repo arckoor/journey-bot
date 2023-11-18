@@ -2,6 +2,7 @@
 import time
 import string
 import re
+import hashlib
 import textwrap
 import unicodedata
 from dataclasses import dataclass, asdict
@@ -91,7 +92,6 @@ class Pool:
         self.update_config()
         as_config = Utils.get_anti_spam_config(self.guild_id)
         for punished_message in as_config.recently_punished:
-            punished_message["timestamp"] = float(punished_message["timestamp"])
             self.recently_punished.append(PunishedMessage(**punished_message))
         self.remove_recently_punished.start()
 
@@ -176,37 +176,46 @@ class Pool:
             else:
                 return None
         else:
-            replacements = {
-                "𝘢": "a",
-                "𝘤": "c",
-                "𝘦": "e",
-                "𝘧": "f",
-                "𝘩": "h",
-                "𝘯": "n",
-                "𝘪": "i",
-                "𝘪": "i",
-                "𝘬": "k",
-                "𝘲": "q",
-                "𝘳": "r",
-                "𝘴": "s",
-                "𝘵": "t",
-                "𝘶": "u",
-                "𝘸": "w",
-                "𝘺": "y"
-            }
-            msg = message.content.lower()
-            msg = "".join(replacements.get(char, char) for char in msg)
-            msg = "".join(unicodedata.normalize("NFKD", char).encode("ASCII", "ignore").decode() for char in msg)
-            msg = msg.translate(str.maketrans("", "", string.punctuation))
-            msg = "".join(reversed(re.sub(r"\A\d+.*", "", "".join(reversed(msg)))))
+            msg = self.preprocess_content(message.content)
+        return msg
+
+    @staticmethod
+    def preprocess_content(content: str):
+        replacements = {
+            "𝘢": "a",
+            "𝘤": "c",
+            "𝘦": "e",
+            "𝘧": "f",
+            "𝘩": "h",
+            "𝘯": "n",
+            "𝘪": "i",
+            "𝘪": "i",
+            "𝘬": "k",
+            "𝘲": "q",
+            "𝘳": "r",
+            "𝘴": "s",
+            "𝘵": "t",
+            "𝘶": "u",
+            "𝘸": "w",
+            "𝘺": "y"
+        }
+        msg = content.lower()
+        msg = "".join(replacements.get(char, char) for char in msg)
+        msg = "".join(unicodedata.normalize("NFKD", char).encode("ASCII", "ignore").decode() for char in msg)
+        msg = msg.translate(str.maketrans("", "", string.punctuation))
+        msg = "".join(reversed(re.sub(r"\A\d+.*", "", "".join(reversed(msg)))))
         return msg
 
     def add_recent_punishment(self, message: PunishedMessage):
         self.recently_punished.append(message)
         as_config = Utils.get_anti_spam_config(self.guild_id)
-        new_message = {k: str(v) for k, v in asdict(message).items()}
-        if new_message not in as_config.recently_punished:
-            as_config.recently_punished.append(new_message)
+        for i, punished_message in enumerate(as_config.recently_punished):
+            punished_message = PunishedMessage(**punished_message)
+            if punished_message.content == message.content:
+                punished_message.timestamp = time.time()
+                as_config.recently_punished[i] = asdict(punished_message)
+                as_config.save()
+                return
         as_config.save()
 
     @tasks.loop(hours=4)
@@ -215,20 +224,17 @@ class Pool:
         for message in self.recently_punished:
             if time.time() - message.timestamp > 60*60*24*7:  # one week
                 self.recently_punished.remove(message)
-                as_config.recently_punished.remove({k: str(v) for k, v in asdict(message).items()})
+                as_config.recently_punished.remove(asdict(message))
         as_config.save()
 
     def print_pool(self, format_for_discord=True):
-        if not self.pool and not self.recently_punished:
+        if not self.pool:
             return "Pool is currently empty."
         msg = "```\n" if format_for_discord else "\n"
         for user_id, buckets in self.pool.items():
             msg += f"User {user_id}:\n"
             for bucket in buckets:
                 msg += f"  Bucket: ({bucket.last_score}) \n{str(bucket)}\n"
-        msg += "Recent punishments:\n"
-        for message in self.recently_punished:
-            msg += f"  Message: ({message.timestamp}) {message.content}\n"
         msg += "```" if format_for_discord else ""
         return msg
 
@@ -259,7 +265,8 @@ class AntiSpam(BaseCog):
             embed.add_field(name="Punishment", value=as_config.punishment, inline=True)
             embed.add_field(name="Max spam messages", value=", ".join(str(x) for x in as_config.max_messages), inline=True)
             embed.add_field(name="Similarity threshold(s)", value=", ".join(str(x) for x in as_config.similar_message_threshold), inline=True)
-            embed.add_field(name="Similarity re-ban threshold", value=as_config.similar_message_re_ban_threshold, inline=True)
+            re_ban = "Disabled" if as_config.similar_message_re_ban_threshold > 1 else as_config.similar_message_re_ban_threshold
+            embed.add_field(name="Similarity re-ban threshold", value=re_ban, inline=True)
             embed.add_field(name="Trusted users", value="\n".join([f"<@{user}>" for user in as_config.trusted_users]) or "None", inline=True)
             embed.add_field(name="Trusted roles", value="\n".join([f"<@&{role}>" for role in as_config.trusted_roles]) or "None", inline=True)
         await inter.response.send_message(embed=embed)
@@ -302,6 +309,57 @@ class AntiSpam(BaseCog):
         as_config.enabled = False
         as_config.save()
         await inter.response.send_message("Anti-spam disabled for this guild.")
+
+    @as_config.sub_command_group(name="punished-messages", description="Configure punished messages")
+    async def as_punished_messages(self, inter: ApplicationCommandInteraction):
+        pass
+
+    @as_punished_messages.sub_command(name="show", description="Show the recently punished messages and their hashes.")
+    async def as_punished_messages_show(self, inter: ApplicationCommandInteraction):
+        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        if not as_config.recently_punished:
+            await inter.response.send_message("No punished messages found.")
+            return
+        embed = Embed.default_embed(
+            title="Recently punished messages",
+            author=inter.author.name,
+            icon_url=inter.author.avatar.url
+        )
+        for message in as_config.recently_punished:
+            message = PunishedMessage(**message)
+            diff = time.time() - message.timestamp
+            hash_ = self.hash_punished_message(message)
+            embed.add_field(name=f"Hash: {hash_} | Remaining lifespan: {Utils.time_to_text(diff, 60*60*24*7)}", value=message.content, inline=False)
+        await inter.response.send_message(embed=embed)
+
+    @as_punished_messages.sub_command(name="add", description="Add a punished message.")
+    async def as_punished_messages_add(self, inter: ApplicationCommandInteraction, message: str = commands.Param(name="message", description="The message to add to the punished messages.")):
+        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        message = Pool.preprocess_content(message)
+        for i, entry in enumerate(as_config.recently_punished):
+            entry = PunishedMessage(**entry)
+            if entry.content == message:
+                entry.timestamp = time.time()
+                as_config.recently_punished[i] = asdict(entry)
+                as_config.save()
+                await inter.response.send_message("Lifespan of existing punished message has been extended.")
+                return
+        as_config.recently_punished.append(asdict(PunishedMessage(message, time.time())))
+        as_config.save()
+        await inter.response.send_message("Punished message added.")
+
+    @as_punished_messages.sub_command(name="remove", description="Remove a punished message.")
+    async def as_punished_messages_remove(self, inter: ApplicationCommandInteraction, hash: str = commands.Param(name="hash", description="The hash of the message to remove.")):
+        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        for punished_message in as_config.recently_punished:
+            message = PunishedMessage(**punished_message)
+            hash_ = self.hash_punished_message(message)
+            if hash_ == hash:
+                as_config.recently_punished.remove(punished_message)
+                as_config.save()
+                await inter.response.send_message(f"Punished message (`{hash_}`) removed.")
+                return
+        await inter.response.send_message("Punished message not found.", ephemeral=True)
 
     @as_config.sub_command(name="punishment", description="Configure the punishment for the anti-spam module.")
     async def as_configure_punishment(
@@ -481,6 +539,9 @@ class AntiSpam(BaseCog):
 
     def parse_string_to_list(self, input: str, type: type):
         return [type(x.strip()) for x in input.split(",") if x]
+
+    def hash_punished_message(self, message: PunishedMessage):
+        return hashlib.sha1((f"{message.timestamp} | {message.content}").encode("utf-8")).hexdigest()[:16]
 
 
 def setup(bot: commands.Bot):

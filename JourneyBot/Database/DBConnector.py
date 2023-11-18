@@ -1,4 +1,4 @@
-from mongoengine import Document, StringField, IntField, FloatField, BooleanField, ListField, MapField, DateTimeField, connect, disconnect_all
+from mongoengine import Document, StringField, IntField, FloatField, BooleanField, ListField, DictField, DateTimeField, connect, disconnect_all
 from Util import Configuration
 
 
@@ -46,6 +46,15 @@ class GuildConfig(Document):
     }
 
 
+class ASDictField(DictField):
+    def validate(self, value):
+        super().validate(value)
+        if not isinstance(value.get("content"), str):
+            self.error("content must be a string.")
+        if not isinstance(value.get("timestamp"), float):
+            self.error("timestamp must be a float.")
+
+
 class AntiSpamConfig(Document):
     guild = IntField(required=True)
     enabled = BooleanField(required=False, default=False)
@@ -57,7 +66,7 @@ class AntiSpamConfig(Document):
     time_frame = IntField(required=False, default=300)
     trusted_users = ListField(IntField(), required=False)
     trusted_roles = ListField(IntField(), required=False)
-    recently_punished = ListField(MapField(field=StringField()), required=False, default=[])
+    recently_punished = ListField(ASDictField(), required=False, default=[])
     meta = {
         "auto_create_index_on_save": False,
         "indexes": ["+guild"]
