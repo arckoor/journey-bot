@@ -72,7 +72,7 @@ class Administration(BaseCog):
             await inter.response.send_message(f"**{cog}** has been reloaded.", ephemeral=True)
             await Logging.bot_log(f"**{cog}** has been reloaded by {inter.author.name}.")
         else:
-            await inter.response.send_message("I can't find that cog.")
+            await inter.response.send_message("I can't find that cog.", ephemeral=True)
 
 
 def setup(bot: commands.Bot):
