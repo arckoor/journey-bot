@@ -347,6 +347,8 @@ class AntiSpam(BaseCog):
         as_config.recently_punished.append(asdict(PunishedMessage(message, time.time())))
         as_config.save()
         await inter.response.send_message("Punished message added.")
+        if inter.guild_id in self.pools:
+            self.pools[inter.guild_id].update_config()
 
     @as_punished_messages.sub_command(name="remove", description="Remove a punished message.")
     async def as_punished_messages_remove(self, inter: ApplicationCommandInteraction, hash: str = commands.Param(name="hash", description="The hash of the message to remove.")):
@@ -360,6 +362,8 @@ class AntiSpam(BaseCog):
                 await inter.response.send_message(f"Punished message (`{hash_}`) removed.")
                 return
         await inter.response.send_message("Punished message not found.", ephemeral=True)
+        if inter.guild_id in self.pools:
+            self.pools[inter.guild_id].update_config()
 
     @as_config.sub_command(name="punishment", description="Configure the punishment for the anti-spam module.")
     async def as_configure_punishment(
