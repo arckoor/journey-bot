@@ -201,8 +201,8 @@ class Pool:
         msg = content.lower()
         msg = "".join(replacements.get(char, char) for char in msg)
         msg = "".join(unicodedata.normalize("NFKD", char).encode("ASCII", "ignore").decode() for char in msg)
-        msg = msg.translate(str.maketrans("", "", string.punctuation))
-        msg = "".join(reversed(re.sub(r"\A\d+.*", "", "".join(reversed(msg)))))
+        msg = "".join(reversed(re.sub(r"\A\d+", "", "".join(reversed(msg)))))
+        msg = msg.strip()
         return msg
 
     def add_recent_punishment(self, message: PunishedMessage):
