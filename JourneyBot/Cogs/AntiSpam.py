@@ -90,9 +90,6 @@ class Pool:
 
     def initialize(self):
         self.update_config()
-        as_config = Utils.get_anti_spam_config(self.guild_id)
-        for punished_message in as_config.recently_punished:
-            self.recently_punished.append(PunishedMessage(**punished_message))
         self.remove_recently_punished.start()
 
     def update_config(self):
@@ -106,6 +103,7 @@ class Pool:
             for bucket in self.pool[user_id]:
                 bucket.set_max_size(self.config["max_spam_messages"])
                 bucket.set_time_frame(self.config["time_frame"])
+        self.recently_punished = [PunishedMessage(**message) for message in as_config.recently_punished]
 
     def add_message(self, message: Message) -> tuple[bool, Bucket, float]:
         content = self.preprocess_message(message)
@@ -117,6 +115,7 @@ class Pool:
         closest_bucket.add_message(PoolMessage(content, message.id, time.time()), confidence)
         is_recently_punished, is_recently_punished_confidence = self.is_recently_punished(content)
         if is_recently_punished:
+            self.add_recent_punishment(PunishedMessage(content, time.time()))
             return True, closest_bucket, is_recently_punished_confidence
         for c_level, max_size in self.config["violation_trigger"]:
             if confidence >= c_level and len(closest_bucket) >= max_size:
@@ -216,6 +215,7 @@ class Pool:
                 as_config.recently_punished[i] = asdict(punished_message)
                 as_config.save()
                 return
+        as_config.recently_punished.append(asdict(message))
         as_config.save()
 
     @tasks.loop(hours=4)
@@ -525,7 +525,7 @@ class AntiSpam(BaseCog):
         if guild.id not in self.pools:
             return
         if user.id in self.pools[guild.id].pool:
-            Logging.info(f"{user.name} ({user.id}) has been banned. They had the following pools: {self.pools[user.id].print_pool()}")
+            Logging.info(f"{user.name} ({user.id}) has been banned. They had the following pools: {self.pools[guild.id].print_pool()}")
 
     async def clean_user(self, guild_id: int, user_id: int):
         pool = self.pools[guild_id]
