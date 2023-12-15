@@ -6,7 +6,7 @@ from disnake.ext.commands import ExtensionAlreadyLoaded, errors
 from Util import Configuration, Emoji, Logging
 
 
-class JourneyBot(commands.Bot):
+class JourneyBot(commands.InteractionBot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.loaded = False

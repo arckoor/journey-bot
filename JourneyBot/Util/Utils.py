@@ -1,21 +1,10 @@
 import io
 import datetime
-import typing
+
 from dataclasses import dataclass
 
 import disnake # noqa
-from disnake import ApplicationCommandInteraction
-from disnake.ext.commands import Bot
-
-from enum import Enum
-from Database.DBConnector import SupportedDocumentType, ConfigDocumentType, GuildConfig, AntiSpamConfig
-
-
-class ValidationType(Enum):
-    INVALID_ID = 0
-    ID_NOT_FOUND = 1
-    NOT_IN_CHANNEL = 2
-    OK = 3
+from disnake.ext.commands import InteractionBot
 
 
 @dataclass
@@ -32,52 +21,6 @@ class Channel:
     guild: Guild = None
 
 
-def is_hex(hex_string: str):
-    try:
-        int(hex_string, 16)
-        return True
-    except ValueError:
-        return False
-
-
-def is_object_id(object_id: str):
-    return len(object_id) == 24 and is_hex(object_id)
-
-
-def get_document_from_id_or_channel(
-    type: SupportedDocumentType,
-    inter: ApplicationCommandInteraction,
-    id: str = None
-) -> tuple[SupportedDocumentType, typing.Literal[ValidationType.OK]] | tuple[None, typing.Literal[ValidationType.INVALID_ID, ValidationType.ID_NOT_FOUND, ValidationType.NOT_IN_CHANNEL]]:
-    if id:
-        if not is_object_id(id):
-            return None, ValidationType.INVALID_ID
-        if not type.objects(id=id, guild=inter.guild_id):
-            return None, ValidationType.ID_NOT_FOUND
-        document = type.objects(id=id).first()
-    else:
-        if not type.objects(channel=inter.channel.id):
-            return None, ValidationType.NOT_IN_CHANNEL
-        document = type.objects(channel=inter.channel.id).first()
-    return document, ValidationType.OK
-
-
-def get_config(id: int, type: ConfigDocumentType) -> ConfigDocumentType:
-    if not type.objects(guild=id):
-        document = type(guild=id)
-        document.save()
-        return document
-    return type.objects(guild=id).first()
-
-
-def get_guild_config(id: int) -> GuildConfig:
-    return get_config(id, GuildConfig)
-
-
-def get_anti_spam_config(id: int) -> AntiSpamConfig:
-    return get_config(id, AntiSpamConfig)
-
-
 def get_alternate_channel(id: int = None, name: str = None, mention: str = None, guild: dict = None) -> Channel:
     id = coalesce(id, 0)
     name = coalesce(name, "Unknown")
@@ -89,7 +32,7 @@ def get_alternate_channel(id: int = None, name: str = None, mention: str = None,
     return Channel(id=id, name=name, mention=mention, guild=guild)
 
 
-def make_file(bot: Bot, channel_name, messages) -> disnake.File:
+def make_file(bot: InteractionBot, channel_name, messages) -> disnake.File:
     timestamp = datetime.datetime.strftime(datetime.datetime.now(tz=datetime.timezone.utc), "%H:%M:%S")
     out = f"recorded spam messages at {timestamp} in {channel_name}\n"
     for msg in messages:

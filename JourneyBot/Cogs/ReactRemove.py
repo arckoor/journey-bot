@@ -7,8 +7,9 @@ from disnake import ApplicationCommandInteraction, Forbidden
 from disnake.ext import commands
 
 from Cogs.BaseCog import BaseCog
+from Database.DBConnector import db, get_guild_config
 from Views import Embed
-from Util import Utils, Logging
+from Util import Logging
 from Util.Emoji import msg_with_emoji
 
 
@@ -62,7 +63,7 @@ class ReactRemove(BaseCog):
         }
         start = time.perf_counter()
         delta_time = disnake.utils.utcnow() - time_frame_to_delta.get(time_frame, datetime.timedelta(minutes=10))
-        guild_config = Utils.get_guild_config(inter.guild_id)
+        guild_config = await get_guild_config(inter.guild_id)
         if all_channels:
             channels = [x for x in inter.guild.text_channels if x.id not in guild_config.react_remove_excluded_channels]
             await inter.channel.send(content="Searching through all channels. This may take a while.")
@@ -151,7 +152,7 @@ class ReactRemove(BaseCog):
 
     @rr_config.sub_command(name="show", description="Show the remove-reacts configuration.")
     async def rr_config_show(self, inter: ApplicationCommandInteraction):
-        guild_config = Utils.get_guild_config(inter.guild_id)
+        guild_config = await get_guild_config(inter.guild_id)
         embed = Embed.default_embed(title="Remove Reacts Configuration", description="The current configuration for remove-reacts.", author=inter.author, icon_url=inter.author.avatar.url)
         embed.add_field(name="Greedy Limit", value=guild_config.react_remove_greedy_limit)
         if guild_config.react_remove_excluded_channels:
@@ -162,17 +163,15 @@ class ReactRemove(BaseCog):
 
     @rr_config.sub_command(name="greedy-limit", description="Configure the greedy limit for remove-reacts.")
     async def rr_config_greedy_limit(self, inter: ApplicationCommandInteraction, limit: int = commands.Param(description="The greedy limit.")):
-        guild_config = Utils.get_guild_config(inter.guild_id)
-        guild_config.react_remove_greedy_limit = limit
-        guild_config.save()
+        await db.guildconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "react_remove_greedy_limit": limit
+            }
+        )
         await inter.response.send_message(f"Set the greedy limit to {limit}.")
-
-    @rr_config.sub_command(name="silent-sweep-limit", description="Configure the silent sweep limit for remove-reacts.")
-    async def rr_config_silent_sweep_limit(self, inter: ApplicationCommandInteraction, limit: int = commands.Param(description="The silent sweep limit.")):
-        guild_config = Utils.get_guild_config(inter.guild_id)
-        guild_config.react_remove_silent_sweep_limit = limit
-        guild_config.save()
-        await inter.response.send_message(f"Set the silent sweep limit to {limit}.")
 
     @rr_config.sub_command_group(name="channels", description="Configure the channels for remove-reacts.")
     async def rr_config_channels(self, inter: ApplicationCommandInteraction):
@@ -180,31 +179,47 @@ class ReactRemove(BaseCog):
 
     @rr_config_channels.sub_command(name="exclude", description="Exclude channels from remove-reacts.")
     async def rr_config_channels_exclude(self, inter: ApplicationCommandInteraction, channels: str = commands.Param(description="The channels to exclude.", converter=convert_to_text_channels)):
-        guild_config = Utils.get_guild_config(inter.guild_id)
-        excluded = []
+        guild_config = await get_guild_config(inter.guild_id)
+        channel_mentions = []
+        channel_ids = []
         for channel in channels:
             channel: disnake.TextChannel
             if channel.id not in guild_config.react_remove_excluded_channels:
-                guild_config.react_remove_excluded_channels.append(channel.id)
-                excluded.append(channel.mention)
-        guild_config.save()
-        if excluded:
-            await inter.response.send_message(f"Excluded {', '.join(excluded)} from remove-reacts.")
+                channel_ids.append(channel.id)
+                channel_mentions.append(channel.mention)
+        if channel_mentions:
+            await db.guildconfig.update(
+                where={
+                    "guild": inter.guild_id
+                },
+                data={
+                    "react_remove_excluded_channels": guild_config.react_remove_excluded_channels + channel_ids
+                }
+            )
+            await inter.response.send_message(f"Excluded {', '.join(channel_mentions)} from remove-reacts.")
         else:
             await inter.response.send_message("No further channels were excluded from remove-reacts.")
 
     @rr_config_channels.sub_command(name="include", description="Re-include channels in remove-reacts.")
     async def rr_config_channels_include(self, inter: ApplicationCommandInteraction, channels: str = commands.Param(description="The channels to exclude.", converter=convert_to_text_channels)):
-        guild_config = Utils.get_guild_config(inter.guild_id)
-        included = []
+        guild_config = await get_guild_config(inter.guild_id)
+        included_mentions = []
+        included_ids = []
         for channel in channels:
             channel: disnake.TextChannel
             if channel.id in guild_config.react_remove_excluded_channels:
-                guild_config.react_remove_excluded_channels.remove(channel.id)
-                included.append(channel.mention)
-        guild_config.save()
-        if included:
-            await inter.response.send_message(f"Re-included {', '.join(included)} in remove-reacts.")
+                included_ids.append(channel.id)
+                included_mentions.append(channel.mention)
+        if included_mentions:
+            await db.guildconfig.update(
+                where={
+                    "guild": inter.guild_id
+                },
+                data={
+                    "react_remove_excluded_channels": [x for x in guild_config.react_remove_excluded_channels if x not in included_ids]
+                }
+            )
+            await inter.response.send_message(f"Re-included {', '.join(included_mentions)} in remove-reacts.")
         else:
             await inter.response.send_message("All channels are already included in remove-reacts.")
 

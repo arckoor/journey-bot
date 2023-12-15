@@ -1,3 +1,5 @@
+import disnake  # noqa
+from disnake.ext.commands import InteractionBot
 from disnake import utils
 
 from Util import Configuration, Logging
@@ -14,7 +16,7 @@ BACKUPS = {
 }
 
 
-async def initialize(bot):
+async def initialize(bot: InteractionBot):
     emoji_guild = await bot.fetch_guild(Configuration.get_master_var("EMOJI_GUILD"))
     failed = []
     for name, eid in Configuration.get_master_var("EMOJI", {}).items():

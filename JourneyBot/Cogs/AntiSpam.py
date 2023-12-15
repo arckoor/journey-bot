@@ -2,10 +2,9 @@
 import time
 import string
 import re
-import hashlib
 import textwrap
 import unicodedata
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import Levenshtein
 
 import disnake  # noqa
@@ -13,6 +12,8 @@ from disnake import ApplicationCommandInteraction, Message, Forbidden
 from disnake.ext import commands, tasks
 
 from Cogs.BaseCog import BaseCog
+from Database.DBConnector import db, get_anti_spam_config
+from prisma.models import PunishedMessage
 from Views import Embed
 from Util import Configuration, Logging, Utils
 from Util.Emoji import msg_with_emoji
@@ -26,9 +27,13 @@ class PoolMessage:
 
 
 @dataclass
-class PunishedMessage:
+class PunishedMsg:
     content: str
     timestamp: float
+
+    @classmethod
+    def from_db(cls, message: PunishedMessage):
+        return cls(message.content, message.timestamp)
 
 
 class Bucket:
@@ -78,22 +83,22 @@ class Bucket:
 
 
 class Pool:
-    def __init__(self, guild_id: int):
+    def __init__(self, guild_id: int, as_config_id: int):
         self.pool: dict[int, list[Bucket]] = {}
-        self.recently_punished: list[PunishedMessage] = []
+        self.recently_punished: list[PunishedMsg] = []
         self.config = {}
         self.guild_id = guild_id
-        self.initialize()
+        self.as_config_id = as_config_id
 
     def buckets(self, user_id: int):
         return iter(self.pool[user_id])
 
-    def initialize(self):
-        self.update_config()
+    async def initialize(self):
+        await self.update_config()
         self.remove_recently_punished.start()
 
-    def update_config(self):
-        as_config = Utils.get_anti_spam_config(self.guild_id)
+    async def update_config(self):
+        as_config = await get_anti_spam_config(self.guild_id)
         self.config["violation_trigger"] = [(as_config.similar_message_threshold[i], as_config.max_messages[i]) for i in range(len(as_config.max_messages))]
         self.config["max_spam_messages"] = max(as_config.max_messages)
         self.config["min_sim_message_threshold"] = min(as_config.similar_message_threshold)
@@ -103,9 +108,10 @@ class Pool:
             for bucket in self.pool[user_id]:
                 bucket.set_max_size(self.config["max_spam_messages"])
                 bucket.set_time_frame(self.config["time_frame"])
-        self.recently_punished = [PunishedMessage(**message) for message in as_config.recently_punished]
+        self.recently_punished = [PunishedMsg.from_db(message) for message in as_config.recently_punished]
+        Logging.info(f"Updated config for guild {self.guild_id}.")
 
-    def add_message(self, message: Message) -> tuple[bool, Bucket, float]:
+    async def add_message(self, message: Message) -> tuple[bool, Bucket, float]:
         content = self.preprocess_message(message)
         if not content:
             return False, None, None
@@ -115,12 +121,14 @@ class Pool:
         closest_bucket.add_message(PoolMessage(content, message.id, time.time()), confidence)
         is_recently_punished, is_recently_punished_confidence = self.is_recently_punished(content)
         if is_recently_punished:
-            self.add_recent_punishment(PunishedMessage(content, time.time()))
+            await self.add_recent_punishment(PunishedMsg(content, time.time()))
             return True, closest_bucket, is_recently_punished_confidence
         for c_level, max_size in self.config["violation_trigger"]:
             if confidence >= c_level and len(closest_bucket) >= max_size:
-                self.add_recent_punishment(PunishedMessage(content, time.time()))
+                await self.add_recent_punishment(PunishedMsg(content, time.time()))
                 return True, closest_bucket, confidence
+            elif len(closest_bucket) >= max_size - 1:
+                Logging.info(f"User {message.author.name} (`{message.author.id}`) is close to triggering a violation.\n" + self.print_pool(format_for_discord=False))
         return False, None, None
 
     def is_recently_punished(self, message: str):
@@ -152,6 +160,7 @@ class Pool:
     def get_new_bucket(self, user_id):
         new_bucket = Bucket(self.config["max_spam_messages"], user_id, self.config["time_frame"], self.remove_empty_bucket)
         self.pool[user_id].append(new_bucket)
+        Logging.info(f"Created new bucket for user {user_id} in {self.guild_id}.")
         return new_bucket
 
     def remove_empty_bucket(self, user_id: int, bucket: Bucket):
@@ -161,6 +170,7 @@ class Pool:
         self.pool[user_id].remove(bucket)
         if not self.pool[user_id]:
             del self.pool[user_id]
+        Logging.info(f"An empty bucket was removed for user {user_id} in {self.guild_id}.")
 
     def remove_user(self, user_id: int):
         if user_id in self.pool:
@@ -201,31 +211,59 @@ class Pool:
         msg = content.lower()
         msg = "".join(replacements.get(char, char) for char in msg)
         msg = "".join(unicodedata.normalize("NFKD", char).encode("ASCII", "ignore").decode() for char in msg)
+        msg = msg.translate(str.maketrans("", "", string.punctuation))  # TODO what if message is only punctuation? (also parse out newlines)
         msg = "".join(reversed(re.sub(r"\A\d+", "", "".join(reversed(msg)))))
         msg = msg.strip()
         return msg
 
-    def add_recent_punishment(self, message: PunishedMessage):
+    async def add_recent_punishment(self, message: PunishedMsg):
         self.recently_punished.append(message)
-        as_config = Utils.get_anti_spam_config(self.guild_id)
-        for i, punished_message in enumerate(as_config.recently_punished):
-            punished_message = PunishedMessage(**punished_message)
-            if punished_message.content == message.content:
-                punished_message.timestamp = time.time()
-                as_config.recently_punished[i] = asdict(punished_message)
-                as_config.save()
-                return
-        as_config.recently_punished.append(asdict(message))
-        as_config.save()
+        await db.punishedmessage.find_first(
+            where={
+                "guild": self.guild_id,
+                "content": message.content
+            }
+        )
+        punished_message = await db.punishedmessage.upsert(
+            where={
+                "guild_content": {
+                    "guild": self.guild_id,
+                    "content": message.content
+                }
+            },
+            data={
+                "create": {
+                    "content": message.content,
+                    "timestamp": time.time(),
+                    "guild": self.guild_id,
+                    "AntiSpamConfig": {
+                        "connect": {
+                            "id": self.as_config_id
+                        }
+                    }
+                },
+                "update": {
+                    "timestamp": time.time()
+                }
+            }
+        )
+        Logging.info(f"Added recently punished message {punished_message.id} for guild {self.guild_id}.")
 
     @tasks.loop(hours=4)
     async def remove_recently_punished(self):
-        as_config = Utils.get_anti_spam_config(self.guild_id)
-        for message in self.recently_punished:
+        punished_messages = await db.punishedmessage.find_many(
+            where={
+                "guild": self.guild_id
+            }
+        )
+        for message in punished_messages:
             if time.time() - message.timestamp > 60*60*24*7:  # one week
-                self.recently_punished.remove(message)
-                as_config.recently_punished.remove(asdict(message))
-        as_config.save()
+                await db.punishedmessage.delete(
+                    where={
+                        "id": message.id
+                    }
+                )
+                Logging.info(f"Removed punished message {message.id} for guild {self.guild_id}.")
 
     def print_pool(self, format_for_discord=True):
         if not self.pool:
@@ -259,7 +297,7 @@ class AntiSpam(BaseCog):
             author=inter.author.name,
             icon_url=inter.author.avatar.url
         )
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        as_config = await get_anti_spam_config(inter.guild_id)
         embed.add_field(name="Anti-Spam enabled", value=as_config.enabled, inline=True)
         if as_config.enabled:
             embed.add_field(name="Punishment", value=as_config.punishment, inline=True)
@@ -290,24 +328,20 @@ class AntiSpam(BaseCog):
                         "the user is immediately punished. Useful for users that join with new accounts to spam again. Set > 1 to disable this behaviour.", inline=False)
         await inter.response.send_message(embed=embed)
 
-    @as_config.sub_command(name="module-enable", description="Enable the anti-spam module.")
-    async def as_enable(self, inter: ApplicationCommandInteraction):
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
-        if as_config.enabled:
-            await inter.response.send_message("Anti-spam is already enabled for this guild.", ephemeral=True)
-            return
-        as_config.enabled = True
-        as_config.save()
-        await inter.response.send_message("Anti-spam enabled for this guild.")
-
     @as_config.sub_command(name="module-disable", description="Disable the anti-spam module.")
     async def as_disable(self, inter: ApplicationCommandInteraction):
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        as_config = await get_anti_spam_config(inter.guild_id)
         if as_config.enabled:
             await inter.response.send_message("Anti-spam is already disabled for this guild.", ephemeral=True)
             return
-        as_config.enabled = False
-        as_config.save()
+        await db.antispamconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "enabled": False
+            }
+        )
         await inter.response.send_message("Anti-spam disabled for this guild.")
 
     @as_config.sub_command_group(name="punished-messages", description="Configure punished messages")
@@ -316,7 +350,7 @@ class AntiSpam(BaseCog):
 
     @as_punished_messages.sub_command(name="show", description="Show the recently punished messages and their hashes.")
     async def as_punished_messages_show(self, inter: ApplicationCommandInteraction):
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        as_config = await get_anti_spam_config(inter.guild_id)
         if not as_config.recently_punished:
             await inter.response.send_message("No punished messages found.")
             return
@@ -326,44 +360,59 @@ class AntiSpam(BaseCog):
             icon_url=inter.author.avatar.url
         )
         for message in as_config.recently_punished:
-            message = PunishedMessage(**message)
             diff = time.time() - message.timestamp
-            hash_ = self.hash_punished_message(message)
-            embed.add_field(name=f"Hash: {hash_} | Remaining lifespan: {Utils.time_to_text(diff, 60*60*24*7)}", value=message.content, inline=False)
+            embed.add_field(name=f"ID: {message.id} | Remaining lifespan: {Utils.time_to_text(diff, 60*60*24*7)}", value=message.content, inline=False)
         await inter.response.send_message(embed=embed)
 
     @as_punished_messages.sub_command(name="add", description="Add a punished message.")
     async def as_punished_messages_add(self, inter: ApplicationCommandInteraction, message: str = commands.Param(name="message", description="The message to add to the punished messages.")):
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        as_config = await get_anti_spam_config(inter.guild_id)
         message = Pool.preprocess_content(message)
-        for i, entry in enumerate(as_config.recently_punished):
-            entry = PunishedMessage(**entry)
-            if entry.content == message:
-                entry.timestamp = time.time()
-                as_config.recently_punished[i] = asdict(entry)
-                as_config.save()
-                await inter.response.send_message("Lifespan of existing punished message has been extended.")
-                return
-        as_config.recently_punished.append(asdict(PunishedMessage(message, time.time())))
-        as_config.save()
-        await inter.response.send_message("Punished message added.")
+        await db.punishedmessage.upsert(
+            where={
+                "guild_content": {
+                    "guild": inter.guild_id,
+                    "content": message
+                }
+            },
+            data={
+                "create": {
+                    "content": message,
+                    "timestamp": time.time(),
+                    "guild": inter.guild_id,
+                    "AntiSpamConfig": {
+                        "connect": {
+                            "id": as_config.id
+                        }
+                    }
+                },
+                "update": {
+                    "timestamp": time.time()
+                }
+            }
+        )
+        await inter.response.send_message("Punished message updated or added.")
         if inter.guild_id in self.pools:
-            self.pools[inter.guild_id].update_config()
+            await self.pools[inter.guild_id].update_config()
 
     @as_punished_messages.sub_command(name="remove", description="Remove a punished message.")
-    async def as_punished_messages_remove(self, inter: ApplicationCommandInteraction, hash: str = commands.Param(name="hash", description="The hash of the message to remove.")):
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
-        for punished_message in as_config.recently_punished:
-            message = PunishedMessage(**punished_message)
-            hash_ = self.hash_punished_message(message)
-            if hash_ == hash:
-                as_config.recently_punished.remove(punished_message)
-                as_config.save()
-                await inter.response.send_message(f"Punished message (`{hash_}`) removed.")
-                return
-        await inter.response.send_message("Punished message not found.", ephemeral=True)
+    async def as_punished_messages_remove(self, inter: ApplicationCommandInteraction, id: int = commands.Param(name="id", description="The id of the message to remove.", ge=1)):
+        punished_message = await db.punishedmessage.find_unique(
+            where={
+                "id": id
+            }
+        )
+        if not punished_message:
+            await inter.response.send_message("Punished message not found.", ephemeral=True)
+            return
+        await db.punishedmessage.delete(
+            where={
+                "id": id
+            }
+        )
+        await inter.response.send_message("Punished message removed.")
         if inter.guild_id in self.pools:
-            self.pools[inter.guild_id].update_config()
+            await self.pools[inter.guild_id].update_config()
 
     @as_config.sub_command(name="punishment", description="Configure the punishment for the anti-spam module.")
     async def as_configure_punishment(
@@ -391,7 +440,7 @@ class AntiSpam(BaseCog):
         elif any(x < 0 or x > 1 for x in similarity_threshold):
             await inter.response.send_message("Each value of similarity-threshold must be between 0 and 1.", ephemeral=True)
             return
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        as_config = await get_anti_spam_config(inter.guild_id)
         if punishment == "mute":
             if not mute_role and as_config.mute_role:
                 mute_role = inter.guild.get_role(as_config.mute_role)
@@ -401,21 +450,27 @@ class AntiSpam(BaseCog):
             if not inter.me.guild_permissions.manage_roles:
                 await inter.response.send_message("I don't have permission to manage and assign roles.", ephemeral=True)
                 return
-            as_config.mute_role = mute_role.id
         else:
             if not inter.guild.me.guild_permissions.ban_members:
                 await inter.response.send_message("I don't have permission to ban members.", ephemeral=True)
                 return
-        as_config.punishment = punishment
-        as_config.max_messages = max_spam_messages
-        as_config.similar_message_threshold = similarity_threshold
-        as_config.similar_message_re_ban_threshold = sim_re_ban_threshold
-        as_config.time_frame = time_frame
-        as_config.enabled = True
-        as_config.save()
+        await db.antispamconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "punishment":                       punishment,
+                "mute_role":                        mute_role.id if punishment == "mute" else Utils.coalesce(as_config.mute_role),
+                "max_messages":                     max_spam_messages,
+                "similar_message_threshold":        similarity_threshold,
+                "similar_message_re_ban_threshold": sim_re_ban_threshold,
+                "time_frame":                       time_frame,
+                "enabled":                          True
+            }
+        )
         await inter.response.send_message(f"Punishment set to {punishment}.")
         if inter.guild_id in self.pools:
-            self.pools[inter.guild_id].update_config()
+            await self.pools[inter.guild_id].update_config()
 
     @as_config.sub_command_group(name="trusted-roles", description="Configure the trusted roles for the anti-spam module.")
     async def as_configure_trusted_roles(self, inter: ApplicationCommandInteraction):
@@ -423,22 +478,34 @@ class AntiSpam(BaseCog):
 
     @as_configure_trusted_roles.sub_command(name="add", description="Add a trusted role.")
     async def as_configure_trusted_roles_add(self, inter: ApplicationCommandInteraction, role: disnake.Role):
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        as_config = await get_anti_spam_config(inter.guild_id)
         if role.id in as_config.trusted_roles:
             await inter.response.send_message("That role is already trusted.", ephemeral=True)
             return
-        as_config.trusted_roles.append(role.id)
-        as_config.save()
+        await db.antispamconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "trusted_roles": as_config.trusted_roles + [role.id]
+            }
+        )
         await inter.response.send_message(f"Role {role.name} (`{role.id}`) added to trusted roles.")
 
     @as_configure_trusted_roles.sub_command(name="remove", description="Remove a trusted role.")
     async def as_configure_trusted_roles_remove(self, inter: ApplicationCommandInteraction, role: disnake.Role):
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        as_config = await get_anti_spam_config(inter.guild_id)
         if role.id not in as_config.trusted_roles:
             await inter.response.send_message("That role is not trusted.", ephemeral=True)
             return
-        as_config.trusted_roles.remove(role.id)
-        as_config.save()
+        await db.antispamconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "trusted_roles": [x for x in as_config.trusted_roles if x != role.id]
+            }
+        )
         await inter.response.send_message(f"Role {role.name} (`{role.id}`) removed from trusted roles.")
 
     @as_config.sub_command_group(name="trusted-users", description="Configure the trusted users for the anti-spam module.")
@@ -447,22 +514,34 @@ class AntiSpam(BaseCog):
 
     @as_configure_trusted_users.sub_command(name="add", description="Add a trusted user.")
     async def as_configure_trusted_users_add(self, inter: ApplicationCommandInteraction, user: disnake.User):
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        as_config = await get_anti_spam_config(inter.guild_id)
         if user.id in as_config.trusted_users:
             await inter.response.send_message("That user is already trusted.", ephemeral=True)
             return
-        as_config.trusted_users.append(user.id)
-        as_config.save()
+        await db.antispamconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "trusted_users": as_config.trusted_users + [user.id]
+            }
+        )
         await inter.response.send_message(f"User {user.name} (`{user.id}`) added to trusted users.")
 
     @as_configure_trusted_users.sub_command(name="remove", description="Remove a trusted user.")
     async def as_configure_trusted_users_remove(self, inter: ApplicationCommandInteraction, user: disnake.User):
-        as_config = Utils.get_anti_spam_config(inter.guild_id)
+        as_config = await get_anti_spam_config(inter.guild_id)
         if user.id not in as_config.trusted_users:
             await inter.response.send_message("That user is not trusted.", ephemeral=True)
             return
-        as_config.trusted_users.remove(user.id)
-        as_config.save()
+        await db.antispamconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "trusted_users": [x for x in as_config.trusted_users if x != user.id]
+            }
+        )
         await inter.response.send_message(f"User {user.name} (`{user.id}`) removed from trusted users.")
 
     @commands.slash_command(description="Print the current pool.", guild_ids=[Configuration.get_master_var("ADMIN_GUILD", 0)])
@@ -475,16 +554,17 @@ class AntiSpam(BaseCog):
         if id not in self.pools:
             await inter.response.send_message("Pool is currently empty.", ephemeral=True)
             return
-        await inter.response.send_message(self.pools[id].print_pool())
+        await inter.response.send_message(self.pools[id].print_pool())  # TODO what if > 2000 chars?
 
     @commands.Cog.listener()
     @commands.guild_only()
     async def on_message(self, message: Message):
-        as_config = Utils.get_anti_spam_config(message.guild.id)
+        as_config = await get_anti_spam_config(message.guild.id)
         if not message.guild or not as_config.enabled:
             return
         if message.guild.id not in self.pools:
-            self.pools[message.guild.id] = Pool(message.guild.id)
+            self.pools[message.guild.id] = Pool(message.guild.id, as_config.id)
+            await self.pools[message.guild.id].initialize()
         pool = self.pools[message.guild.id]
         if message.author.id in as_config.trusted_users:
             return
@@ -492,7 +572,7 @@ class AntiSpam(BaseCog):
             return
         elif message.author.bot:
             return
-        spam, bucket, confidence = pool.add_message(message)
+        spam, bucket, confidence = await pool.add_message(message)
         if spam:
             Logging.info(f"Detected spam by user {message.author.name} (`{message.author.id}`) with confidence {confidence}.")
             file = None
@@ -525,7 +605,7 @@ class AntiSpam(BaseCog):
         if guild.id not in self.pools:
             return
         if user.id in self.pools[guild.id].pool:
-            Logging.info(f"{user.name} ({user.id}) has been banned. They had the following pools: {self.pools[guild.id].print_pool()}")
+            Logging.info(f"{user.name} ({user.id}) has been banned. They had the following pools: {self.pools[guild.id].print_pool(format_for_discord=False)}")
 
     async def clean_user(self, guild_id: int, user_id: int):
         pool = self.pools[guild_id]
@@ -543,9 +623,6 @@ class AntiSpam(BaseCog):
 
     def parse_string_to_list(self, input: str, type: type):
         return [type(x.strip()) for x in input.split(",") if x]
-
-    def hash_punished_message(self, message: PunishedMessage):
-        return hashlib.sha1((f"{message.timestamp} | {message.content}").encode("utf-8")).hexdigest()[:16]
 
 
 def setup(bot: commands.Bot):

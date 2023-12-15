@@ -11,7 +11,11 @@ from Util import Logging, Configuration
 
 async def startup():
     Logging.setup_logging()
-    DBConnector.init()
+    await DBConnector.connect()
+
+
+async def shutdown():
+    await DBConnector.disconnect()
 
 
 if __name__ == "__main__":
@@ -32,7 +36,6 @@ if __name__ == "__main__":
     )
 
     args = {
-        "command_prefix": "+",
         "intents": intents,
     }
 
@@ -44,6 +47,5 @@ if __name__ == "__main__":
             loop.add_signal_handler(getattr(signal, sig_name), lambda: asyncio.ensure_future(journeyBot.close()))
     except Exception:
         pass
-
-    DBConnector.disconnect()
+    asyncio.run(shutdown())
     loop.close()

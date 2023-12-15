@@ -1,0 +1,76 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider             = "prisma-client-py"
+  recursive_type_depth = 5
+}
+
+model StickyMessage {
+  id                String   @id @default(uuid())
+  channel           BigInt   @unique
+  guild             BigInt
+  author            BigInt
+  content           String
+  last_sent         Float
+  messages_since    Int
+  active            Boolean  @default(true)
+  current_id        BigInt?
+  message_limit     Int?     @default(0)
+  time_limit        Int?     @default(0)
+  delete_old_sticky Boolean? @default(true)
+
+  @@index([channel])
+}
+
+model RSSFeed {
+  id          String    @id @default(uuid())
+  url         String
+  guild       BigInt
+  channel     BigInt
+  template    String
+  initialized Boolean   @default(false)
+  latest_post DateTime?
+}
+
+model GuildConfig {
+  id                              Int      @id @default(autoincrement())
+  guild                           BigInt   @unique
+  guild_log                       BigInt?
+  react_remove_excluded_channels  BigInt[] @default([])
+  react_remove_greedy_limit       Int?     @default(25)
+  react_remove_silent_sweep_limit Int?     @default(25)
+  new_user_threshold              Int?     @default(14)
+
+  @@index([guild])
+}
+
+model AntiSpamConfig {
+  id                               Int               @id @default(autoincrement())
+  guild                            BigInt            @unique
+  enabled                          Boolean           @default(false)
+  punishment                       String?           @default("mute")
+  mute_role                        BigInt?
+  max_messages                     Int[]             @default([5])
+  similar_message_threshold        Float[]           @default([0.95])
+  similar_message_re_ban_threshold Float?            @default(0.95)
+  time_frame                       Int?              @default(300)
+  trusted_users                    BigInt[]          @default([])
+  trusted_roles                    BigInt[]          @default([])
+  recently_punished                PunishedMessage[]
+
+  @@index([guild])
+}
+
+model PunishedMessage {
+  id               Int            @id @default(autoincrement())
+  guild            BigInt
+  content          String
+  timestamp        Float
+  AntiSpamConfig   AntiSpamConfig @relation(fields: [antiSpamConfigId], references: [id])
+  antiSpamConfigId Int
+
+  @@unique(name: "guild_content", [guild, content])
+}

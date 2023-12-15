@@ -1,4 +1,4 @@
-import disnake
+import disnake  # noqa
 from disnake import ButtonStyle, Interaction
 from disnake.ui import Button
 

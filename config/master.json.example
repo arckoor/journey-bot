@@ -15,11 +15,10 @@
     },
     "EMOJI_GUILD": 0,
     "ENV": "dev",
-    "MONGO_URI": "",
     "RSS": {
         "update_interval_seconds": 5
     },
-    "Sticky": {
+    "STICKY": {
         "max_messages": 5,
         "min_time": 15
     }
