@@ -6,7 +6,7 @@ from disnake import Intents
 
 from Bot.JourneyBot import JourneyBot
 from Database import DBConnector
-from Util import Logging, Configuration
+from Util import Logging, Configuration, Reddit
 
 
 async def startup():
@@ -15,6 +15,7 @@ async def startup():
 
 
 async def shutdown():
+    await Reddit.shutdown()
     await DBConnector.disconnect()
 
 

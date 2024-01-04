@@ -25,24 +25,22 @@ model StickyMessage {
   @@index([channel])
 }
 
-model RSSFeed {
-  id          String    @id @default(uuid())
-  url         String
+model RedditFeed {
+  id          String   @id @default(uuid())
   guild       BigInt
   channel     BigInt
+  subreddit   String
   template    String
-  initialized Boolean   @default(false)
-  latest_post DateTime?
+  latest_post DateTime @default(now())
 }
 
 model GuildConfig {
-  id                              Int      @id @default(autoincrement())
-  guild                           BigInt   @unique
-  guild_log                       BigInt?
-  react_remove_excluded_channels  BigInt[] @default([])
-  react_remove_greedy_limit       Int?     @default(25)
-  react_remove_silent_sweep_limit Int?     @default(25)
-  new_user_threshold              Int?     @default(14)
+  id                             Int      @id @default(autoincrement())
+  guild                          BigInt   @unique
+  guild_log                      BigInt?
+  react_remove_excluded_channels BigInt[] @default([])
+  react_remove_greedy_limit      Int?     @default(25)
+  new_user_threshold             Int?     @default(14)
 
   @@index([guild])
 }

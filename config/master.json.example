@@ -8,15 +8,20 @@
     "EMBED_COLOR": "0x0",
     "EMOJI": {
         "BAN": 0,
+        "FEED": 0,
         "JOIN": 0,
-        "RSS": 0,
+        "REACT": 0,
         "STICKY": 0,
         "WARN": 0
     },
     "EMOJI_GUILD": 0,
     "ENV": "dev",
-    "RSS": {
-        "update_interval_seconds": 5
+    "REDDIT_API": {
+        "CLIENT_ID": "",
+        "CLIENT_SECRET": "",
+        "PASSWORD": "",
+        "USERNAME": "",
+        "USER_AGENT": ""
     },
     "STICKY": {
         "max_messages": 5,
