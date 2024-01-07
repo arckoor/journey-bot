@@ -152,23 +152,30 @@ class Feeds(BaseCog):
         )
 
     async def update_reddit_feed(self, feed: RedditFeed):
-        subreddit = await self.reddit_api.subreddit(feed.subreddit)
-        async for submission in subreddit.stream.submissions():
-            if feed.id in self.stop_requests:
-                self.stop_requests.remove(feed.id)
-                break
-            post_time = datetime.datetime.utcfromtimestamp(submission.created_utc).replace(tzinfo=datetime.timezone.utc)
-            feed_latest_post = feed.latest_post
-            if post_time > feed_latest_post:
-                await self.post_reddit_feed(feed, submission)
-                await db.redditfeed.update(
-                    where={
-                        "id": feed.id
-                    },
-                    data={
-                        "latest_post": post_time
-                    }
-                )
+        Logging.info(f"Starting feed {feed.id} ({feed.subreddit})")
+        try:
+            subreddit = await self.reddit_api.subreddit(feed.subreddit)
+            async for submission in subreddit.stream.submissions():
+                if feed.id in self.stop_requests:
+                    self.stop_requests.remove(feed.id)
+                    break
+                post_time = datetime.datetime.utcfromtimestamp(submission.created_utc).replace(tzinfo=datetime.timezone.utc)
+                feed_latest_post = feed.latest_post
+                if post_time > feed_latest_post:
+                    await self.post_reddit_feed(feed, submission)
+                    await db.redditfeed.update(
+                        where={
+                            "id": feed.id
+                        },
+                        data={
+                            "latest_post": post_time
+                        }
+                    )
+        except Exception as e:
+            Logging.error(f"Error in feed {feed.id} ({feed.subreddit}): {e}")
+            await asyncio.sleep(10)
+            Logging.info(f"Restarted feed {feed.id} ({feed.subreddit})")
+            self.bot.loop.create_task(self.update_reddit_feed(feed))
 
     async def post_reddit_feed(self, feed: RedditFeed, submission):
         channel = self.bot.get_channel(feed.channel)
