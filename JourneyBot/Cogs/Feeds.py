@@ -24,7 +24,7 @@ class Feeds(BaseCog):
         for feed in await db.redditfeed.find_many():
             self.bot.loop.create_task(self.update_reddit_feed(feed))
 
-    async def close(self):
+    async def close(self, reload=False):
         for feed in await db.redditfeed.find_many():
             if feed.id not in self.stop_requests:
                 self.stop_requests.append(feed.id)
@@ -34,7 +34,8 @@ class Feeds(BaseCog):
             timer += 1
             if timer > 60:
                 break
-        await Reddit.shutdown()
+        if not reload:
+            await Reddit.shutdown()
 
     @commands.slash_command(dm_permission=False, description="Feed management.")
     @commands.guild_only()
@@ -148,7 +149,7 @@ class Feeds(BaseCog):
         )
         Logging.info(
             f"A feed for r/{feed.subreddit} ({feed.id}) removed from channel {channel.name if channel and channel.name else 'unknown'}" +
-            f"({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})"
+            f" ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})"
         )
 
     async def update_reddit_feed(self, feed: RedditFeed):

@@ -64,12 +64,13 @@ class Administration(BaseCog):
             cogs.append(c.replace("Cog", ""))
 
         if cog in cogs:
+            await inter.response.defer(ephemeral=True)
             c = self.bot.get_cog(cog)
             if hasattr(c, "close"):
-                await c.close()
+                await c.close(reload=True)
             self.bot.unload_extension(f"Cogs.{cog}")
             self.bot.load_extension(f"Cogs.{cog}")
-            await inter.response.send_message(f"**{cog}** has been reloaded.", ephemeral=True)
+            await inter.edit_original_response(f"**{cog}** has been reloaded.")
             await Logging.bot_log(f"**{cog}** has been reloaded by {inter.author.name}.")
         else:
             await inter.response.send_message("I can't find that cog.", ephemeral=True)
