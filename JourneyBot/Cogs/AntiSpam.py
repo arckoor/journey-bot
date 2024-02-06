@@ -128,7 +128,7 @@ class Pool:
                 await self.add_recent_punishment(PunishedMsg(content, time.time()))
                 return True, closest_bucket, confidence
             elif len(closest_bucket) >= max_size - 1:
-                Logging.info(f"User {message.author.name} (`{message.author.id}`) is close to triggering a violation.\n" + self.print_pool(format_for_discord=False))
+                Logging.info(f"User {message.author.name} ({message.author.id}) is close to triggering a violation.\n" + self.print_pool(format_for_discord=False))
         return False, None, None
 
     def is_recently_punished(self, message: str):
@@ -302,11 +302,13 @@ class AntiSpam(BaseCog):
         if as_config.enabled:
             embed.add_field(name="Punishment", value=as_config.punishment, inline=True)
             embed.add_field(name="Max spam messages", value=", ".join(str(x) for x in as_config.max_messages), inline=True)
+            embed.add_field(name="Time frame", value=f"{as_config.time_frame} seconds", inline=True)
             embed.add_field(name="Similarity threshold(s)", value=", ".join(str(x) for x in as_config.similar_message_threshold), inline=True)
             re_ban = "Disabled" if as_config.similar_message_re_ban_threshold > 1 else as_config.similar_message_re_ban_threshold
             embed.add_field(name="Similarity re-ban threshold", value=re_ban, inline=True)
             embed.add_field(name="Trusted users", value="\n".join([f"<@{user}>" for user in as_config.trusted_users]) or "None", inline=True)
             embed.add_field(name="Trusted roles", value="\n".join([f"<@&{role}>" for role in as_config.trusted_roles]) or "None", inline=True)
+            embed.add_field(name="Ignored channels", value="\n".join([f"<#{channel}>" for channel in as_config.ignored_channels]) or "None", inline=True)
         await inter.response.send_message(embed=embed)
 
     @as_config.sub_command(name="help", description="Show the help for the anti-spam module.")
@@ -544,6 +546,42 @@ class AntiSpam(BaseCog):
         )
         await inter.response.send_message(f"User {user.name} (`{user.id}`) removed from trusted users.")
 
+    @as_config.sub_command_group(name="ignored-channels", description="Configure ignored channels for the anti-spam module.")
+    async def as_configure_ignored_channel(self, inter: ApplicationCommandInteraction):
+        pass
+
+    @as_configure_ignored_channel.sub_command(name="add", description="Add an ignored channel.")
+    async def as_configure_ignored_channel_add(self, inter: ApplicationCommandInteraction, channel: disnake.TextChannel):
+        as_config = await get_anti_spam_config(inter.guild_id)
+        if channel.id in as_config.ignored_channels:
+            await inter.response.send_message("That channel is already ignored.", ephemeral=True)
+            return
+        await db.antispamconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "ignored_channels": as_config.ignored_channels + [channel.id]
+            }
+        )
+        await inter.response.send_message(f"Channel {channel.name} (`{channel.id}`) added to ignored channels.")
+
+    @as_configure_ignored_channel.sub_command(name="remove", description="Remove an ignored channel.")
+    async def as_configure_ignored_channel_remove(self, inter: ApplicationCommandInteraction, channel: disnake.TextChannel):
+        as_config = await get_anti_spam_config(inter.guild_id)
+        if channel.id not in as_config.ignored_channels:
+            await inter.response.send_message("That channel is not ignored.", ephemeral=True)
+            return
+        await db.antispamconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "ignored_channels": [x for x in as_config.ignored_channels if x != channel.id]
+            }
+        )
+        await inter.response.send_message(f"Channel {channel.name} (`{channel.id}`) removed from ignored channels.")
+
     @commands.slash_command(description="Print the current pool.", guild_ids=[Configuration.get_master_var("ADMIN_GUILD", 0)])
     @commands.is_owner()
     @commands.guild_only()
@@ -566,7 +604,9 @@ class AntiSpam(BaseCog):
             self.pools[message.guild.id] = Pool(message.guild.id, as_config.id)
             await self.pools[message.guild.id].initialize()
         pool = self.pools[message.guild.id]
-        if message.author.id in as_config.trusted_users:
+        if message.channel.id in as_config.ignored_channels:
+            return
+        elif message.author.id in as_config.trusted_users:
             return
         elif any([role in as_config.trusted_roles for role in (role.id for role in message.author.roles)]):
             return

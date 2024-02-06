@@ -40,11 +40,15 @@ def make_file(bot: InteractionBot, channel_name, messages) -> disnake.File:
         if not message:
             continue
         name = message.author.name
-        reply = ""
+        content, reply, attachments = "(no content)", "", ""
         if message.reference is not None:
             reply = f" | In reply to https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.reference.message_id}"
+        if message.attachments:
+            attachments = " | Attachments: " + ",".join(attachment.url for attachment in message.attachments)
+        if message.content:
+            content = message.content
         timestamp = datetime.datetime.strftime(disnake.Object(message.id).created_at.astimezone(tz=datetime.timezone.utc), "%H:%M:%S")
-        out += f"{timestamp} {message.guild.id} - {message.channel.id} - {message.id} | {name} ({message.author.id}) | {message.content}{reply}\r\n"
+        out += f"{timestamp} {message.guild.id} - {message.channel.id} - {message.id} | {name} ({message.author.id}) | {content}{reply}{attachments}\r\n"
     buffer = io.BytesIO()
     buffer.write(out.encode("utf-8"))
     buffer.seek(0)

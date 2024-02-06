@@ -67,7 +67,7 @@ class Administration(BaseCog):
             await inter.response.defer(ephemeral=True)
             c = self.bot.get_cog(cog)
             if hasattr(c, "close"):
-                await c.close(reload=True)
+                await c.close()
             self.bot.unload_extension(f"Cogs.{cog}")
             self.bot.load_extension(f"Cogs.{cog}")
             await inter.edit_original_response(f"**{cog}** has been reloaded.")

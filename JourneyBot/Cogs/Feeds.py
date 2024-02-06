@@ -19,14 +19,16 @@ class Feeds(BaseCog):
         super().__init__(bot)
         self.reddit_api = Reddit.get_reddit(invoked_by="Cogs/" + self.__class__.__name__)
         self.stop_requests = []
+        self.restarts_available = []
+        self.restart_attempts: dict[str, int] = {}
 
     async def cog_load(self):
         for feed in await db.redditfeed.find_many():
             self.bot.loop.create_task(self.update_reddit_feed(feed))
 
-    async def close(self, reload=False):
+    async def close(self):
         for feed in await db.redditfeed.find_many():
-            if feed.id not in self.stop_requests:
+            if feed.id not in self.stop_requests and feed.id not in self.restarts_available:
                 self.stop_requests.append(feed.id)
         timer = 0
         while self.stop_requests:
@@ -34,8 +36,6 @@ class Feeds(BaseCog):
             timer += 1
             if timer > 60:
                 break
-        if not reload:
-            await Reddit.shutdown()
 
     @commands.slash_command(dm_permission=False, description="Feed management.")
     @commands.guild_only()
@@ -152,6 +152,32 @@ class Feeds(BaseCog):
             f" ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})"
         )
 
+    @feed.sub_command(description="Manually restart a feed.")
+    async def restart(
+        self,
+        inter: ApplicationCommandInteraction,
+        id: str = commands.Param(name="feed-id", description="The ID of the feed to restart.", min_length=36, max_length=36)
+    ):
+        feed = await db.redditfeed.find_first(
+            where={
+                "id": id
+            }
+        )
+        if not feed:
+            await inter.response.send_message("No feed found with that ID.", ephemeral=True)
+            return
+        if feed.id not in self.restarts_available:
+            await inter.response.send_message("This feed is not available for restart.", ephemeral=True)
+            return
+        self.restarts_available.remove(feed.id)
+        self.bot.loop.create_task(self.update_reddit_feed(feed))
+        await Logging.guild_log(
+            feed.guild,
+            msg_with_emoji("FEED", f"Feed {feed.id} ({feed.subreddit}) was manually restarted by {inter.author.name} (`{inter.author.id}`)")
+        )
+        Logging.info(f"Manually restarted feed {feed.id} ({feed.subreddit})")
+        await inter.response.send_message("Attempting to restart feed.")
+
     async def update_reddit_feed(self, feed: RedditFeed):
         Logging.info(f"Starting feed {feed.id} ({feed.subreddit})")
         try:
@@ -173,13 +199,12 @@ class Feeds(BaseCog):
                         }
                     )
         except Exception as e:
-            Logging.error(f"Error in feed {feed.id} ({feed.subreddit}): {e}")
-            await asyncio.sleep(10)
-            Logging.info(f"Restarted feed {feed.id} ({feed.subreddit})")
-            self.bot.loop.create_task(self.update_reddit_feed(feed))
+            await self.handle_post_error(feed, e)
 
     async def post_reddit_feed(self, feed: RedditFeed, submission):
         channel = self.bot.get_channel(feed.channel)
+        if not channel or not channel.permissions_for(channel.guild.me).send_messages:
+            raise PermissionError
         await channel.trigger_typing()
         await asyncio.sleep(3)
         if not channel:
@@ -192,6 +217,30 @@ class Feeds(BaseCog):
         message = feed.template.replace("{{title}}", submission.title)
         message = message.replace("{{link}}", f"https://www.reddit.com{submission.permalink}")
         await channel.send(message)
+
+    async def handle_post_error(self, feed: RedditFeed, error: Exception):
+        if isinstance(error, PermissionError):
+            channel = self.bot.get_channel(feed.channel)
+            c = f"channel `{feed.channel}`" if not channel else channel.mention
+            await Logging.guild_log(channel.guild.id, msg_with_emoji(
+                "WARN", f"I could not send a post for feed (`{feed.id}`) in {c}, because I don't have access to the channel. Restart the feed manually after you have resolved the permission issue."
+            ))
+            Logging.warning(f"Could not send post for feed {feed.id}. Channel {feed.channel} not found.")
+            self.restarts_available.append(feed.id)
+        else:
+            if not self.restart_attempts.get(feed.id):
+                self.restart_attempts[feed.id] = 1
+            else:
+                if self.restart_attempts[feed.id] > 5:
+                    await Logging.guild_log(feed.guild, msg_with_emoji("ERROR", f"Feed {feed.id} ({feed.subreddit}) has failed to restart 5 times. You can try to restart it manually."))
+                    Logging.error(f"Feed {feed.id} ({feed.subreddit}) has failed to restart 5 times.")
+                    del self.restart_attempts[feed.id]
+                    self.restarts_available.append(feed.id)
+                    return
+            Logging.error(f"Error in feed {feed.id} ({feed.subreddit}): {error}")
+            await asyncio.sleep(10)
+            Logging.info(f"Restarted feed {feed.id} ({feed.subreddit})")
+            self.bot.loop.create_task(self.update_reddit_feed(feed))
 
 
 def setup(bot: commands.Bot):

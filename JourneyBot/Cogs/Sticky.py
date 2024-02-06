@@ -169,7 +169,7 @@ class Sticky(BaseCog):
         await inter.response.send_message("Sticky message started.")
         await Logging.guild_log(inter.guild_id, msg_with_emoji("STICKY", f"A sticky message (`{stickyMessage.id}`) in {channel.mention} was started by {inter.author.name} (`{inter.author.id}`)"))
         Logging.info(f"Sticky message started in channel {channel.name} ({channel.guild.name}) by {inter.author.name} ({inter.author.id})")
-        await self.send_stick(stickyMessage.channel, True)
+        await self.send_stick(stickyMessage.channel, override=True)
 
     @stick.sub_command(description="Stop a currently active sticky message without deleting it.")
     async def stop(

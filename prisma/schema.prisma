@@ -57,6 +57,7 @@ model AntiSpamConfig {
   time_frame                       Int?              @default(300)
   trusted_users                    BigInt[]          @default([])
   trusted_roles                    BigInt[]          @default([])
+  ignored_channels                 BigInt[]          @default([])
   recently_punished                PunishedMessage[]
 
   @@index([guild])
