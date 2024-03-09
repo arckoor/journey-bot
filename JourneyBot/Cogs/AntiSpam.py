@@ -64,7 +64,7 @@ class Bucket:
         return len(self.bucket)
 
     def __str__(self):
-        return textwrap.indent("\n".join([f"{msg.content}" for msg in self.bucket]), prefix=" "*4)
+        return textwrap.indent("\n".join([f"{msg.id} | {msg.content}" for msg in self.bucket]), prefix=" "*4)
 
     def add_message(self, message: PoolMessage, score: float):
         self.bucket.append(message)

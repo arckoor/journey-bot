@@ -190,7 +190,7 @@ class Feeds(BaseCog):
                 feed_latest_post = feed.latest_post
                 if post_time > feed_latest_post:
                     await self.post_reddit_feed(feed, submission)
-                    await db.redditfeed.update(
+                    feed = await db.redditfeed.update(
                         where={
                             "id": feed.id
                         },
@@ -231,8 +231,9 @@ class Feeds(BaseCog):
             if not self.restart_attempts.get(feed.id):
                 self.restart_attempts[feed.id] = 1
             else:
+                self.restart_attempts[feed.id] += 1
                 if self.restart_attempts[feed.id] > 5:
-                    await Logging.guild_log(feed.guild, msg_with_emoji("ERROR", f"Feed {feed.id} ({feed.subreddit}) has failed to restart 5 times. You can try to restart it manually."))
+                    await Logging.guild_log(feed.guild, msg_with_emoji("WARN", f"A feed for {feed.subreddit} (`{feed.id}`) has failed to restart 5 times. You can try to restart it manually."))
                     Logging.error(f"Feed {feed.id} ({feed.subreddit}) has failed to restart 5 times.")
                     del self.restart_attempts[feed.id]
                     self.restarts_available.append(feed.id)
