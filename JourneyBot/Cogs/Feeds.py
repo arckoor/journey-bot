@@ -212,7 +212,7 @@ class Feeds(BaseCog):
                 feed.guild,
                 msg_with_emoji("WARN", f"Unable to post to channel {feed.channel} for feed `{feed.id}` ({feed.subreddit})")
             )
-            Logging.warn(f"Unable to post to channel {feed.channel} for feed {feed.id} ({feed.subreddit})")
+            Logging.warning(f"Unable to post to channel {feed.channel} for feed {feed.id} ({feed.subreddit})")
             return
         message = feed.template.replace("{{title}}", submission.title)
         message = message.replace("{{link}}", f"https://www.reddit.com{submission.permalink}")

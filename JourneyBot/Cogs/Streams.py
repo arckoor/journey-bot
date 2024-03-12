@@ -66,6 +66,7 @@ class Streams(BaseCog):
         embed.add_field(name="{{game}}", value="The game being played.", inline=False)
         embed.add_field(name="{{viewer_count}}", value="The number of viewers.", inline=False)
         embed.add_field(name="{{link}}", value="The link to the stream.", inline=False)
+        embed.add_field(name="End template", value="For the end template, only {{game}} is available.", inline=False)
         await inter.response.send_message(embed=embed, ephemeral=True)
 
     @stream_observer.sub_command(name="list", description="List all stream observers.")
@@ -122,8 +123,9 @@ class Streams(BaseCog):
     async def add(
         self,
         inter:    ApplicationCommandInteraction,
-        game_id:  str = commands.Param(name="game-id", description="The ID of the game to watch.", min_length=1),
-        template: str = commands.Param(default=None, description="The template to use for the stream."),
+        game_id:      str = commands.Param(name="game-id", description="The ID of the game to watch.", min_length=1),
+        template:     str = commands.Param(default=None, description="The template to use for the stream."),
+        end_template: str = commands.Param(default=None, description="The template to use for the end of the stream. Gets appended to the message when the stream ends.")
     ):
         games = self.twitch_api.get_games(game_ids=[game_id])
         cnt, game = 0, None
@@ -139,13 +141,19 @@ class Streams(BaseCog):
         else:
             template = template.replace("\\n", "\n")
 
+        if not end_template:
+            end_template = "\n\n{{game}} is no longer being streamed."
+        else:
+            end_template = end_template.replace("\\n", "\n")
+
         observer = await db.streamobserver.create(
             data={
                 "guild": inter.guild_id,
                 "channel": inter.channel_id,
                 "game_id": game_id,
                 "game_name": game.name,
-                "template": template
+                "template": template,
+                "end_template": end_template
             },
             include={
                 "known_streams": True
@@ -274,14 +282,16 @@ class Streams(BaseCog):
             try:
                 streams = limit(self.twitch_api.get_streams(game_id=observer.game_id, stream_type="live"), self.max_concurrent_streams)
                 async for stream in streams:
-                    if stream.user_id in observer.blacklist:
+                    if stream.user_id in observer.blacklist \
+                            or stream.game_id != observer.game_id \
+                            or stream.is_mature:
                         continue
-                    if stream.game_name != observer.game_name:
-                        continue
-                    existing_stream = await self.update_known_stream(observer, stream)
+                    existing_stream = await self.check_stream_known(stream)
+                    message_id = None
                     if not existing_stream:
                         Logging.info(f"Found new stream: {stream.id}, {stream.user_name} is playing {stream.game_name} since {stream.started_at}")
-                        await self.post_stream(observer, stream)
+                        message_id = await self.post_stream(observer, stream)
+                    await self.update_known_stream(observer, stream, message_id)
                 observer = await db.streamobserver.find_first(
                     where={
                         "id": observer.id
@@ -290,7 +300,7 @@ class Streams(BaseCog):
                         "known_streams": True
                     }
                 )
-                await self.check_known_streams(observer)
+                await self.remove_known_streams(observer)
                 if len(observer.known_streams) == self.max_concurrent_streams:
                     await Logging.guild_log(
                         observer.guild,
@@ -300,12 +310,15 @@ class Streams(BaseCog):
                 Logging.exception(f"Error in stream observer for {observer.id} ({observer.game_id}): {e}")
             await asyncio.sleep(self.refresh_interval)
 
-    async def update_known_stream(self, observer: StreamObserver, stream: Stream):
+    async def check_stream_known(self, stream: Stream):
         existing_stream = await db.knownstream.find_first(
             where={
                 "stream_id": stream.id
             }
         )
+        return bool(existing_stream)
+
+    async def update_known_stream(self, observer: StreamObserver, stream: Stream, message_id: int = None):
         current_time = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc)
         await db.knownstream.upsert(
             where={
@@ -315,6 +328,7 @@ class Streams(BaseCog):
                 "create": {
                     "stream_id": stream.id,
                     "last_seen": current_time,
+                    "message_id": message_id,
                     "StreamObserver": {
                         "connect": {
                             "id": observer.id
@@ -326,11 +340,13 @@ class Streams(BaseCog):
                 }
             }
         )
-        return bool(existing_stream)
 
-    async def check_known_streams(self, observer: StreamObserver):
+    async def remove_known_streams(self, observer: StreamObserver):
         for ks in observer.known_streams:
             if (datetime.datetime.now().replace(tzinfo=datetime.timezone.utc) - ks.last_seen.replace(tzinfo=datetime.timezone.utc)).seconds > 60 * 10:
+                message = self.bot.get_message(ks.message_id)
+                if message:
+                    await message.edit(content=message.content + observer.end_template.replace("{{game}}", observer.game_name))
                 await db.knownstream.delete(
                     where={
                         "id": ks.id
@@ -345,7 +361,7 @@ class Streams(BaseCog):
                 observer.guild,
                 msg_with_emoji("WARN", f"Unable to post to channel {observer.channel} for stream observer `{observer.id}` (`{observer.game_id}` - `{observer.game_name}`)")
             )
-            Logging.warn(f"Unable to post to channel {observer.channel} for feed {observer.id} ({observer.game_id} - {observer.game_name})")
+            Logging.warning(f"Unable to post to channel {observer.channel} for feed {observer.id} ({observer.game_id} - {observer.game_name})")
             return
         await channel.trigger_typing()
         await asyncio.sleep(3)
@@ -354,7 +370,8 @@ class Streams(BaseCog):
         message = message.replace("{{game}}", stream.game_name)
         message = message.replace("{{viewer_count}}", str(stream.viewer_count))
         message = message.replace("{{link}}", f"https://www.twitch.tv/{stream.user_name}")
-        await channel.send(message)
+        msg = await channel.send(message)
+        return msg.id
 
 
 def setup(bot: commands.Bot):
