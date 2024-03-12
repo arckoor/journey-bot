@@ -105,11 +105,14 @@ class Streams(BaseCog):
             return
         channel: disnake.abc.GuildChannel = Utils.coalesce(self.bot.get_channel(observer.channel), Utils.get_alternate_channel(observer.channel))
         embed = Embed.default_embed(
-            title=f"Stream observer {observer.id}",
-            description=f"Game id: {observer.game_id}",
+            title="Stream observer Info",
+            description="Info about a stream observer.",
             author=inter.author.name,
             icon_url=inter.author.avatar.url
         )
+        embed.add_field(name="ID", value=observer.id, inline=False)
+        embed.add_field(name="Game ID", value=observer.game_id, inline=False)
+        embed.add_field(name="Game Name", value=observer.game_name, inline=False)
         embed.add_field(name="Channel", value=channel.mention, inline=False)
         embed.add_field(name="Template", value=observer.template, inline=False)
         embed.add_field(name="Blacklisted users", value=", ".join(observer.blacklist) if observer.blacklist else "None", inline=False)
@@ -141,6 +144,7 @@ class Streams(BaseCog):
                 "guild": inter.guild_id,
                 "channel": inter.channel_id,
                 "game_id": game_id,
+                "game_name": game.name,
                 "template": template
             },
             include={
@@ -151,9 +155,9 @@ class Streams(BaseCog):
         await inter.response.send_message(f"Added stream observer for {game.name}.")
         await Logging.guild_log(
             inter.guild_id,
-            msg_with_emoji("TWITCH", f"A stream observer `{observer.id}` (`{game.id}`) has been added to {inter.channel.mention} by {inter.author.name} (`{inter.author.id}`)")
+            msg_with_emoji("TWITCH", f"A stream observer `{observer.id}` (`{game.id}` - `{game.name}`) has been added to {inter.channel.mention} by {inter.author.name} (`{inter.author.id}`)")
         )
-        Logging.info(f"A stream observer `{observer.id}` (`{game.id}`) was added to channel {inter.channel.name} ({inter.channel.guild.name}) by {inter.author.name} (`{inter.author.id}`)")
+        Logging.info(f"A stream observer {observer.id} ({game.id} - {game.name}) was added to channel {inter.channel.name} ({inter.channel.guild.name}) by {inter.author.name} (`{inter.author.id}`)")
 
     @stream_observer.sub_command(name="remove", description="Remove a stream observer.")
     async def remove(
@@ -179,9 +183,14 @@ class Streams(BaseCog):
         await inter.response.send_message("Stream observer removed.")
         await Logging.guild_log(
             inter.guild_id,
-            msg_with_emoji("TWITCH", f"A stream observer `{observer.id}` (`{observer.game_id}`) has been removed from {channel.mention} by {inter.author.name} (`{inter.author.id}`)")
+            msg_with_emoji(
+                "TWITCH",
+                f"A stream observer `{observer.id}` (`{observer.game_id}` - `{observer.game_name}`) has been removed from {channel.mention} by {inter.author.name} (`{inter.author.id}`)"
+                )
         )
-        Logging.info(f"A stream observer `{observer.id}` (`{observer.game_id}`) was removed from channel {channel.name} ({channel.guild.name}) by {inter.author.name} (`{inter.author.id}`)")
+        Logging.info(
+            f"A stream observer {observer.id} ({observer.game_id} - {observer.game_name}) was removed from channel {channel.name} ({channel.guild.name}) by {inter.author.name} (`{inter.author.id}`)"
+        )
 
     @stream_observer.sub_command(name="blacklist-user", description="Blacklist a Twitch user.")
     async def blacklist_add(
@@ -267,6 +276,8 @@ class Streams(BaseCog):
                 async for stream in streams:
                     if stream.user_id in observer.blacklist:
                         continue
+                    if stream.game_name != observer.game_name:
+                        continue
                     existing_stream = await self.update_known_stream(observer, stream)
                     if not existing_stream:
                         Logging.info(f"Found new stream: {stream.id}, {stream.user_name} is playing {stream.game_name} since {stream.started_at}")
@@ -332,9 +343,9 @@ class Streams(BaseCog):
         if not channel or not channel.permissions_for(channel.guild.me).send_messages:
             Logging.guild_log(
                 observer.guild,
-                msg_with_emoji("WARN", f"Unable to post to channel {observer.channel} for stream observer `{observer.id}` ({observer.game_id})")
+                msg_with_emoji("WARN", f"Unable to post to channel {observer.channel} for stream observer `{observer.id}` (`{observer.game_id}` - `{observer.game_name}`)")
             )
-            Logging.warn(f"Unable to post to channel {observer.channel} for feed {observer.id} ({observer.game_id})")
+            Logging.warn(f"Unable to post to channel {observer.channel} for feed {observer.id} ({observer.game_id} - {observer.game_name})")
             return
         await channel.trigger_typing()
         await asyncio.sleep(3)

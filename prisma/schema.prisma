@@ -39,6 +39,7 @@ model StreamObserver {
   guild         BigInt
   channel       BigInt
   game_id       String
+  game_name     String
   template      String
   blacklist     String[]      @default([])
   known_streams KnownStream[]

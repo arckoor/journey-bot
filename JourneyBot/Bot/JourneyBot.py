@@ -37,6 +37,7 @@ class JourneyBot(commands.InteractionBot):
                 t.append(cog)
             for cog in t:
                 c = self.get_cog(cog)
+                Logging.info(f"Unloading {cog} cog.")
                 if hasattr(c, "close"):
                     await c.close()
                 self.unload_extension(f"Cogs.{cog}")
