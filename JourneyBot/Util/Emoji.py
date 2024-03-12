@@ -12,7 +12,8 @@ BACKUPS = {
     "REACT": "❌",
     "RSS":  "⇶",
     "STICKY": "📧",
-    "WARN": "⚠"
+    "TWITCH": "📺",
+    "WARN": "⚠",
 }
 
 

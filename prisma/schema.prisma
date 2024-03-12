@@ -34,6 +34,26 @@ model RedditFeed {
   latest_post DateTime @default(now())
 }
 
+model StreamObserver {
+  id            String        @id @default(uuid())
+  guild         BigInt
+  channel       BigInt
+  game_id       String
+  template      String
+  blacklist     String[]      @default([])
+  known_streams KnownStream[]
+}
+
+model KnownStream {
+  id               Int            @id @default(autoincrement())
+  stream_id        String         @unique
+  last_seen        DateTime       @default(now())
+  StreamObserver   StreamObserver @relation(fields: [streamObserverId], references: [id], onDelete: Cascade)
+  streamObserverId String
+
+  @@index([stream_id])
+}
+
 model GuildConfig {
   id                             Int      @id @default(autoincrement())
   guild                          BigInt   @unique
@@ -68,7 +88,7 @@ model PunishedMessage {
   guild            BigInt
   content          String
   timestamp        Float
-  AntiSpamConfig   AntiSpamConfig @relation(fields: [antiSpamConfigId], references: [id])
+  AntiSpamConfig   AntiSpamConfig @relation(fields: [antiSpamConfigId], references: [id], onDelete: Cascade)
   antiSpamConfigId Int
 
   @@unique(name: "guild_content", [guild, content])

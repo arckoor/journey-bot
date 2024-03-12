@@ -5,7 +5,7 @@ from Util import Configuration, Logging
 reddit: asyncpraw.Reddit = None
 
 
-def initialize(invoked_by: str):
+def initialize():
     global reddit
     if reddit:
         return
@@ -17,7 +17,7 @@ def initialize(invoked_by: str):
         username=config.get("USERNAME"),
         password=config.get("PASSWORD")
     )
-    Logging.info(f"asyncpraw has been initialized by {invoked_by}.")
+    Logging.info("asyncpraw has been initialized.")
 
 
 async def shutdown():
@@ -27,8 +27,8 @@ async def shutdown():
     await reddit.close()
 
 
-def get_reddit(invoked_by: str):
+def get_reddit():
     global reddit
     if not reddit:
-        initialize(invoked_by)
+        initialize()
     return reddit

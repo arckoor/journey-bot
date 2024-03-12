@@ -636,7 +636,7 @@ class AntiSpam(BaseCog):
             msg = msg_with_emoji(
                 "BAN",
                 f"{message.author.name} (`{message.author.id}`) has been {'muted' if as_config.punishment == 'mute' else 'banned'} for spam. Confidence: " +
-                f"{confidence:.3f}".rstrip("0").rstrip("."),
+                f"{confidence:.3f}".rstrip("0").rstrip(".")
             )
             await Logging.guild_log(message.guild.id, message=msg, file=file)
 

@@ -6,16 +6,19 @@ from disnake import Intents
 
 from Bot.JourneyBot import JourneyBot
 from Database import DBConnector
-from Util import Logging, Configuration, Reddit
+from Util import Configuration, Logging, Reddit, Twitch
 
 
 async def startup():
     Logging.setup_logging()
     await DBConnector.connect()
+    Reddit.initialize()
+    await Twitch.initialize()
 
 
 async def shutdown():
     await Reddit.shutdown()
+    await Twitch.shutdown()
     await DBConnector.disconnect()
 
 

@@ -16,9 +16,9 @@ from Util.Emoji import msg_with_emoji
 class Sticky(BaseCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
-        config = Configuration.get_master_var("STICKY", {"max_messages": 5, "min_time": 15})
-        self.max_messages = config.get("max_messages")
-        self.min_time = config.get("min_time")
+        config = Configuration.get_master_var("STICKY", {"MAX_MESSAGES": 5, "MIN_TIME": 15})
+        self.max_messages = config.get("MAX_MESSAGES")
+        self.min_time = config.get("MIN_TIME")
         self.locks = {}
 
     @commands.slash_command(dm_permission=False, description="Sticky message management.")
@@ -65,6 +65,7 @@ class Sticky(BaseCog):
     ):
         stickyMessage = await self.get_sticky(inter, id)
         if not stickyMessage:
+            await inter.response.send_message("The specified sticky message was not found.", ephemeral=True)
             return
         channel: disnake.abc.GuildChannel = Utils.coalesce(self.bot.get_channel(stickyMessage.channel), Utils.get_alternate_channel(stickyMessage.channel))
         embed = Embed.default_embed(
@@ -179,6 +180,7 @@ class Sticky(BaseCog):
     ):
         stickyMessage = await self.get_sticky(inter, id)
         if not stickyMessage:
+            await inter.response.send_message("The specified sticky message was not found.", ephemeral=True)
             return
         channel: disnake.abc.GuildChannel = Utils.coalesce(self.bot.get_channel(stickyMessage.channel), Utils.get_alternate_channel(stickyMessage.channel))
         if not stickyMessage.active:

@@ -17,7 +17,7 @@ from Util.Emoji import msg_with_emoji
 class Feeds(BaseCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
-        self.reddit_api = Reddit.get_reddit(invoked_by="Cogs/" + self.__class__.__name__)
+        self.reddit_api = Reddit.get_reddit()
         self.stop_requests = []
         self.restarts_available = []
         self.restart_attempts: dict[str, int] = {}
@@ -44,7 +44,7 @@ class Feeds(BaseCog):
     async def feed(self, inter: ApplicationCommandInteraction):
         pass
 
-    @feed.sub_command(name="template-help", description="Feed help.")
+    @feed.sub_command(name="template-help", description="Feed template help.")
     async def template_help(self, inter: ApplicationCommandInteraction):
         embed = Embed.default_embed(
             title="Feed Help",
@@ -148,7 +148,7 @@ class Feeds(BaseCog):
             msg_with_emoji("FEED", f"A feed for r/{feed.subreddit} (`{feed.id}`) was removed from {channel.mention} by {inter.author.name} (`{inter.author.id}`)")
         )
         Logging.info(
-            f"A feed for r/{feed.subreddit} ({feed.id}) removed from channel {channel.name if channel and channel.name else 'unknown'}" +
+            f"A feed for r/{feed.subreddit} ({feed.id}) removed from channel {channel.name}" +
             f" ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})"
         )
 
@@ -210,7 +210,7 @@ class Feeds(BaseCog):
         if not channel:
             Logging.guild_log(
                 feed.guild,
-                msg_with_emoji("WARN", f"Unable to post to channel {feed.channel} for feed {feed.id} ({feed.subreddit})")
+                msg_with_emoji("WARN", f"Unable to post to channel {feed.channel} for feed `{feed.id}` ({feed.subreddit})")
             )
             Logging.warn(f"Unable to post to channel {feed.channel} for feed {feed.id} ({feed.subreddit})")
             return
