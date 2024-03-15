@@ -24,6 +24,7 @@ class Streams(BaseCog):
         config = Configuration.get_master_var("TWITCH_API")
         self.max_concurrent_streams = config.get("MAX_CONCURRENT_STREAMS", 10)
         self.refresh_interval = config.get("REFRESH_INTERVAL", 60)
+        self.offline_threshold = config.get("OFFLINE_THRESHOLD", 60 * 10)
 
     async def cog_load(self):
         for observer in await db.streamobserver.find_many(
@@ -343,7 +344,7 @@ class Streams(BaseCog):
 
     async def remove_known_streams(self, observer: StreamObserver):
         for ks in observer.known_streams:
-            if (datetime.datetime.now().replace(tzinfo=datetime.timezone.utc) - ks.last_seen.replace(tzinfo=datetime.timezone.utc)).seconds > 60 * 10:
+            if (datetime.datetime.now().replace(tzinfo=datetime.timezone.utc) - ks.last_seen.replace(tzinfo=datetime.timezone.utc)).seconds > self.offline_threshold:
                 message = self.bot.get_message(ks.message_id)
                 if message:
                     await message.edit(content=message.content + observer.end_template.replace("{{game}}", observer.game_name))
