@@ -48,12 +48,13 @@ model StreamObserver {
 
 model KnownStream {
   id               Int            @id @default(autoincrement())
-  stream_id        String         @unique
+  stream_id        String
   last_seen        DateTime       @default(now())
   message_id       BigInt?
   StreamObserver   StreamObserver @relation(fields: [streamObserverId], references: [id], onDelete: Cascade)
   streamObserverId String
 
+  @@unique(name: "stream_observer", [stream_id, streamObserverId])
   @@index([stream_id])
 }
 

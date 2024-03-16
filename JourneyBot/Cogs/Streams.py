@@ -245,7 +245,7 @@ class Streams(BaseCog):
             observer.guild,
             msg_with_emoji("TWITCH", f"User `{user_id}` has been blacklisted from observer `{observer.id}` by {inter.author.name} (`{inter.author.id}`)")
         )
-        Logging.info(f"User {user_id} was blacklisted from observer {observer.id} by {inter.author.name} (`{inter.author.id}`)")
+        Logging.info(f"User {user_id} was blacklisted for observer {observer.id} by {inter.author.name} (`{inter.author.id}`)")
 
     @stream_observer.sub_command(name="un-blacklist-user", description="Remove a user from the blacklist.")
     async def blacklist_remove(
@@ -278,7 +278,7 @@ class Streams(BaseCog):
             observer.guild,
             msg_with_emoji("TWITCH", f"User `{user_id}` has been removed from the blacklist from observer `{observer.id}` by {inter.author.name} (`{inter.author.id}`)")
         )
-        Logging.info(f"User {user_id} was removed from the blacklist from observer {observer.id} by {inter.author.name} (`{inter.author.id}`)")
+        Logging.info(f"User {user_id} was removed from the blacklist for observer {observer.id} by {inter.author.name} (`{inter.author.id}`)")
 
     async def observe_game(self, observer: StreamObserver):
         Logging.info(f"Starting observer for {observer.id} ({observer.game_id})")
@@ -290,10 +290,10 @@ class Streams(BaseCog):
                             or stream.game_id != observer.game_id \
                             or stream.is_mature:
                         continue
-                    existing_stream = await self.check_stream_known(stream)
+                    existing_stream = await self.check_stream_known(stream, observer.id)
                     message_id = None
                     if not existing_stream:
-                        Logging.info(f"Found new stream: {stream.id}, {stream.user_name} is playing {stream.game_name} since {stream.started_at}")
+                        Logging.info(f"Found new stream for {observer.id}: {stream.id}, {stream.user_name} is playing {stream.game_name} since {stream.started_at}")
                         message_id = await self.post_stream(observer, stream)
                     await self.update_known_stream(observer, stream, message_id)
                 observer = await db.streamobserver.find_first(
@@ -311,13 +311,16 @@ class Streams(BaseCog):
                         msg_with_emoji("WARN", f"Stream observer `{observer.id}` (`{observer.game_id}`) has reached the maximum number of concurrent streams and is at risk of dropping streams.")
                     )
             except Exception as e:
-                Logging.exception(f"Error in stream observer for {observer.id} ({observer.game_id}): {e}")
+                Logging.exception(f"Error in stream observer for {observer.id} ({observer.game_id})", e)
             await asyncio.sleep(self.refresh_interval)
 
-    async def check_stream_known(self, stream: Stream):
-        existing_stream = await db.knownstream.find_first(
+    async def check_stream_known(self, stream: Stream, observerId: str):
+        existing_stream = await db.knownstream.find_unique(
             where={
-                "stream_id": stream.id
+                "stream_observer": {
+                    "stream_id": stream.id,
+                    "streamObserverId": observerId
+                }
             }
         )
         return bool(existing_stream)
@@ -326,7 +329,10 @@ class Streams(BaseCog):
         current_time = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc)
         await db.knownstream.upsert(
             where={
-                "stream_id": stream.id
+                "stream_observer": {
+                    "stream_id": stream.id,
+                    "streamObserverId": observer.id
+                }
             },
             data={
                 "create": {
@@ -361,7 +367,7 @@ class Streams(BaseCog):
     async def post_stream(self, observer: StreamObserver, stream: Stream):
         channel = self.bot.get_channel(observer.channel)
         if not channel or not channel.permissions_for(channel.guild.me).send_messages:
-            Logging.guild_log(
+            await Logging.guild_log(
                 observer.guild,
                 msg_with_emoji("WARN", f"Unable to post to channel {observer.channel} for stream observer `{observer.id}` (`{observer.game_id}` - `{observer.game_name}`)")
             )

@@ -58,7 +58,12 @@ class Administration(BaseCog):
         pass
 
     @cog.sub_command(description="Reload a cog.")
-    async def reload(self, inter: ApplicationCommandInteraction, cog: str = commands.Param(description="The cog to reload.")):
+    async def reload(
+        self,
+        inter: ApplicationCommandInteraction,
+        cog: str = commands.Param(description="The cog to reload."),
+        now: bool = commands.Param(description="Reload immediately.", default=False)
+    ):
         cogs = []
         for c in self.bot.cogs:
             cogs.append(c.replace("Cog", ""))
@@ -66,7 +71,7 @@ class Administration(BaseCog):
         if cog in cogs:
             await inter.response.defer(ephemeral=True)
             c = self.bot.get_cog(cog)
-            if hasattr(c, "close"):
+            if hasattr(c, "close") and not now:
                 await c.close()
             self.bot.unload_extension(f"Cogs.{cog}")
             self.bot.load_extension(f"Cogs.{cog}")
