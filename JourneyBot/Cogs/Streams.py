@@ -64,6 +64,7 @@ class Streams(BaseCog):
         embed.add_field(name="Variables", value="Variables are replaced with the corresponding value from a stream.", inline=False)
         embed.add_field(name="{{title}}", value="The title of the stream.", inline=False)
         embed.add_field(name="{{user}}", value="The user streaming.", inline=False)
+        embed.add_field(name="{{user_login}}", value="The user streaming.", inline=False)
         embed.add_field(name="{{game}}", value="The game being played.", inline=False)
         embed.add_field(name="{{viewer_count}}", value="The number of viewers.", inline=False)
         embed.add_field(name="{{link}}", value="The link to the stream.", inline=False)
@@ -368,9 +369,10 @@ class Streams(BaseCog):
         await asyncio.sleep(3)
         message = observer.template.replace("{{title}}", stream.title)
         message = message.replace("{{user}}", stream.user_name)
+        message = message.replace("{{user_login}}", stream.user_login)
         message = message.replace("{{game}}", stream.game_name)
         message = message.replace("{{viewer_count}}", str(stream.viewer_count))
-        message = message.replace("{{link}}", f"https://www.twitch.tv/{stream.user_name}")
+        message = message.replace("{{link}}", f"https://www.twitch.tv/{stream.user_login}")
         msg = await channel.send(message)
         return msg.id
 
