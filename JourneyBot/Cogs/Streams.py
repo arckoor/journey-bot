@@ -66,6 +66,7 @@ class Streams(BaseCog):
         embed.add_field(name="{{user}}", value="The user streaming.", inline=False)
         embed.add_field(name="{{user_login}}", value="The user streaming.", inline=False)
         embed.add_field(name="{{game}}", value="The game being played.", inline=False)
+        embed.add_field(name="{{tags}}", value="The tags of the stream.", inline=False)
         embed.add_field(name="{{viewer_count}}", value="The number of viewers.", inline=False)
         embed.add_field(name="{{link}}", value="The link to the stream.", inline=False)
         embed.add_field(name="End template", value="For the end template, only {{game}} is available.", inline=False)
@@ -118,6 +119,7 @@ class Streams(BaseCog):
         embed.add_field(name="Game Name", value=observer.game_name, inline=False)
         embed.add_field(name="Channel", value=channel.mention, inline=False)
         embed.add_field(name="Template", value=observer.template, inline=False)
+        embed.add_field(name="End Template", value=observer.end_template, inline=False)
         embed.add_field(name="Blacklisted users", value=", ".join(observer.blacklist) if observer.blacklist else "None", inline=False)
         await inter.response.send_message(embed=embed)
 
@@ -371,6 +373,7 @@ class Streams(BaseCog):
         message = message.replace("{{user}}", stream.user_name)
         message = message.replace("{{user_login}}", stream.user_login)
         message = message.replace("{{game}}", stream.game_name)
+        message = message.replace("{{tags}}", ", ".join(f"`{x}`" for x in stream.tags))
         message = message.replace("{{viewer_count}}", str(stream.viewer_count))
         message = message.replace("{{link}}", f"https://www.twitch.tv/{stream.user_login}")
         msg = await channel.send(message)
