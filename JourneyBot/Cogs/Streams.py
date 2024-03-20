@@ -379,7 +379,7 @@ class Streams(BaseCog):
         message = message.replace("{{user}}", stream.user_name)
         message = message.replace("{{user_login}}", stream.user_login)
         message = message.replace("{{game}}", stream.game_name)
-        message = message.replace("{{tags}}", ", ".join(f"`{x}`" for x in stream.tags))
+        message = message.replace("{{tags}}", ", ".join(f"`{x}`" for x in Utils.coalesce(stream.tags, [])))
         message = message.replace("{{viewer_count}}", str(stream.viewer_count))
         message = message.replace("{{link}}", f"https://www.twitch.tv/{stream.user_login}")
         msg = await channel.send(message)
