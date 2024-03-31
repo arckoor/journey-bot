@@ -290,12 +290,12 @@ class Streams(BaseCog):
                             or stream.game_id != observer.game_id \
                             or stream.is_mature:
                         continue
-                    existing_stream = await self.check_stream_known(stream, observer.id)
+                    existing_stream, ks_id = await self.check_stream_known(stream, observer.id)
                     message_id = None
                     if not existing_stream:
                         Logging.info(f"Found new stream for {observer.id}: {stream.id}, {stream.user_name} is playing {stream.game_name} since {stream.started_at}")
                         message_id = await self.post_stream(observer, stream)
-                    await self.update_known_stream(observer, stream, message_id)
+                    await self.update_known_stream(observer, stream, ks_id, message_id)
                 observer = await db.streamobserver.find_first(
                     where={
                         "id": observer.id
@@ -315,28 +315,35 @@ class Streams(BaseCog):
             await asyncio.sleep(self.refresh_interval)
 
     async def check_stream_known(self, stream: Stream, observerId: str):
-        existing_stream = await db.knownstream.find_unique(
+        existing_stream = await db.knownstream.find_first(
             where={
-                "stream_observer": {
-                    "stream_id": stream.id,
-                    "streamObserverId": observerId
-                }
+                "OR": [
+                    {
+                        "streamObserverId": {"equals": observerId},
+                        "stream_id": {"equals": stream.id}
+                    },
+                    {
+                        "user_id": {"equals": stream.user_id},
+                        "user_login": {"equals": stream.user_login}
+                    }
+                ]
             }
         )
-        return bool(existing_stream)
+        if existing_stream and existing_stream.stream_id != stream.id:
+            Logging.info(f"Known stream {existing_stream.id} has changed stream id from {existing_stream.stream_id} to {stream.id}")
+        return bool(existing_stream), int(Utils.coalesce(existing_stream.id, -1))
 
-    async def update_known_stream(self, observer: StreamObserver, stream: Stream, message_id: int = None):
+    async def update_known_stream(self, observer: StreamObserver, stream: Stream, ks_id, message_id: int = None):
         current_time = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc)
         await db.knownstream.upsert(
             where={
-                "stream_observer": {
-                    "stream_id": stream.id,
-                    "streamObserverId": observer.id
-                }
+                "id": ks_id
             },
             data={
                 "create": {
                     "stream_id": stream.id,
+                    "user_id": stream.user_id,
+                    "user_login": stream.user_login,
                     "last_seen": current_time,
                     "message_id": message_id,
                     "StreamObserver": {
@@ -346,7 +353,8 @@ class Streams(BaseCog):
                     }
                 },
                 "update": {
-                    "last_seen": current_time
+                    "last_seen": current_time,
+                    "stream_id": stream.id
                 }
             }
         )
