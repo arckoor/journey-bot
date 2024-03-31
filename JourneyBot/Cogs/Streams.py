@@ -331,7 +331,8 @@ class Streams(BaseCog):
         )
         if existing_stream and existing_stream.stream_id != stream.id:
             Logging.info(f"Known stream {existing_stream.id} has changed stream id from {existing_stream.stream_id} to {stream.id}")
-        return bool(existing_stream), int(Utils.coalesce(existing_stream.id, -1))
+        ks_id = existing_stream.id if existing_stream else -1
+        return bool(existing_stream), ks_id
 
     async def update_known_stream(self, observer: StreamObserver, stream: Stream, ks_id, message_id: int = None):
         current_time = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc)
