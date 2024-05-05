@@ -384,15 +384,20 @@ class Streams(BaseCog):
             return
         await channel.trigger_typing()
         await asyncio.sleep(3)
-        message = observer.template.replace("{{title}}", stream.title)
-        message = message.replace("{{user}}", stream.user_name)
-        message = message.replace("{{user_login}}", stream.user_login)
-        message = message.replace("{{game}}", stream.game_name)
+        message = observer.template.replace("{{title}}", self.escape(stream.title))
+        message = message.replace("{{user}}", self.escape(stream.user_name))
+        message = message.replace("{{user_login}}", self.escape(stream.user_login))
+        message = message.replace("{{game}}", self.escape(stream.game_name))
         message = message.replace("{{tags}}", ", ".join(f"`{x}`" for x in Utils.coalesce(stream.tags, [])))
         message = message.replace("{{viewer_count}}", str(stream.viewer_count))
         message = message.replace("{{link}}", f"https://www.twitch.tv/{stream.user_login}")
         msg = await channel.send(message)
         return msg.id
+
+    def escape(self, text: str):
+        for char in ["_", "*", "~", "`", "|"]:
+            text = text.replace(char, f"\\{char}")
+        return text
 
 
 def setup(bot: commands.Bot):

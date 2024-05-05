@@ -173,7 +173,7 @@ class Feeds(BaseCog):
         self.bot.loop.create_task(self.update_reddit_feed(feed))
         await Logging.guild_log(
             feed.guild,
-            msg_with_emoji("FEED", f"Feed {feed.id} ({feed.subreddit}) was manually restarted by {inter.author.name} (`{inter.author.id}`)")
+            msg_with_emoji("FEED", f"A feed for {feed.subreddit} (`{feed.id}`) was manually restarted by {inter.author.name} (`{inter.author.id}`)")
         )
         Logging.info(f"Manually restarted feed {feed.id} ({feed.subreddit})")
         await inter.response.send_message("Attempting to restart feed.")
@@ -232,6 +232,8 @@ class Feeds(BaseCog):
                 self.restart_attempts[feed.id] = 1
             else:
                 self.restart_attempts[feed.id] += 1
+                if 5 > self.restart_attempts[feed.id] > 2:
+                    await asyncio.sleep(300)
                 if self.restart_attempts[feed.id] > 5:
                     await Logging.guild_log(feed.guild, msg_with_emoji("WARN", f"A feed for {feed.subreddit} (`{feed.id}`) has failed to restart 5 times. You can try to restart it manually."))
                     Logging.error(f"Feed {feed.id} ({feed.subreddit}) has failed to restart 5 times.")
@@ -239,7 +241,7 @@ class Feeds(BaseCog):
                     self.restarts_available.append(feed.id)
                     return
             Logging.error(f"Error in feed {feed.id} ({feed.subreddit}): {error}")
-            await asyncio.sleep(10)
+            await asyncio.sleep(60)
             Logging.info(f"Restarted feed {feed.id} ({feed.subreddit})")
             self.bot.loop.create_task(self.update_reddit_feed(feed))
 
