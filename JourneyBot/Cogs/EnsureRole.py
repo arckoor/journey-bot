@@ -97,7 +97,7 @@ class EnsureRole(BaseCog):
         guild_roles = await inter.guild.fetch_roles()
         member_cnt, role_add_cnt = 0, 0
         for member in inter.guild.members:
-            if member.bot:
+            if member.bot or not member.flags.completed_onboarding:
                 continue
             member_cnt += 1
             for ensured_role in ensured_roles:
