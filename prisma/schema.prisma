@@ -60,6 +60,14 @@ model KnownStream {
   @@index([stream_id])
 }
 
+model EnsuredRole {
+  id    Int    @id @default(autoincrement())
+  guild BigInt
+  role  BigInt
+
+  @@unique(name: "guild_role", [guild, role])
+}
+
 model GuildConfig {
   id                             Int      @id @default(autoincrement())
   guild                          BigInt   @unique
