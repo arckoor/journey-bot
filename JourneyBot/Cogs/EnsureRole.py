@@ -83,6 +83,38 @@ class EnsureRole(BaseCog):
         )
         await inter.response.send_message(f"Role {role.name} no longer ensured.")
 
+    @ensure_role.sub_command(name="sweep", description="Sweep all members for ensured roles.")
+    async def ensure_role_sweep(self, inter: ApplicationCommandInteraction):
+        ensured_roles = await db.ensuredrole.find_many(
+            where={
+                "guild": inter.guild_id
+            }
+        )
+        if not ensured_roles:
+            await inter.response.send_message("No roles ensured.", ephemeral=True)
+            return
+        thinking_id = await inter.response.defer(with_message=True, ephemeral=False)
+        guild_roles = await inter.guild.fetch_roles()
+        member_cnt, role_add_cnt = 0, 0
+        for member in inter.guild.members:
+            member_cnt += 1
+            for ensured_role in ensured_roles:
+                for role in guild_roles:
+                    if role.id == ensured_role.role and role not in member.roles:
+                        await member.add_roles(role)
+                        Logging.info(f"Added role {role.id} to {member.id} in {inter.guild.id}.")
+                        role_add_cnt += 1
+
+        reply = f"I looked at {member_cnt} members and added {role_add_cnt} roles."
+        if not inter.is_expired():
+            await inter.followup.send(content=reply)
+        else:
+            try:
+                await thinking_id.delete()
+            except Exception:
+                pass
+            await inter.channel.send(content=reply)
+
     @commands.Cog.listener()
     async def on_member_update(self, _: disnake.Member, after: disnake.Member):
         if after.flags.completed_onboarding:
