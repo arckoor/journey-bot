@@ -1,5 +1,7 @@
 import datetime
+import io
 import time
+import zoneinfo
 
 import disnake # noqa
 from disnake import ApplicationCommandInteraction
@@ -54,6 +56,27 @@ class ModLog(BaseCog):
             }
         )
         await inter.response.send_message(f"New user threshold set to {threshold} days.")
+
+    @ml_config.sub_command(name="time-zone", description="Set the time zone for logs")
+    async def ml_configure_time_zone(self, inter: ApplicationCommandInteraction, time_zone: str = commands.param(description="The time zone to use for logs.")):
+        available_zones = zoneinfo.available_timezones()
+        if time_zone not in available_zones:
+            out = "\n".join(x for x in (sorted(x for x in available_zones)))
+            buffer = io.BytesIO()
+            buffer.write(out.encode("utf-8"))
+            buffer.seek(0)
+            await inter.response.send_message("I don't know this time zone. See the attached file for all valid values.", file=disnake.File(buffer, filename="time-zones.txt"), ephemeral=True)
+            return
+
+        await db.guildconfig.update(
+            where={
+                "guild": inter.guild_id
+            },
+            data={
+                "time_zone": time_zone
+            }
+        )
+        await inter.response.send_message(f"Time zone set to {time_zone}.")
 
     @commands.Cog.listener()
     async def on_member_join(self, member: disnake.Member):

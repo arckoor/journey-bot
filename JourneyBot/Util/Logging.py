@@ -1,6 +1,7 @@
 import sys
 import traceback
 import datetime
+import zoneinfo
 import logging
 from logging.handlers import TimedRotatingFileHandler
 import colorama
@@ -10,7 +11,7 @@ from disnake import Forbidden
 from disnake.ext import commands
 
 from Database.DBConnector import get_guild_config
-from Util import Configuration
+from Util import Configuration, Utils
 
 colorama.init()
 
@@ -80,7 +81,8 @@ async def bot_log(message: str = None, embed: disnake.Embed = None):
 async def guild_log(guild_id: int, message: str = None, embed: disnake.Embed = None, file: disnake.File = None):
     global BOT
     guild_config = await get_guild_config(guild_id)
-    timestamp = datetime.datetime.strftime(datetime.datetime.now(tz=datetime.timezone.utc), "%H:%M:%S")
+    timezone = zoneinfo.ZoneInfo(Utils.coalesce(guild_config.time_zone, "UTC"))
+    timestamp = datetime.datetime.strftime(datetime.datetime.now(tz=timezone), "%H:%M:%S")
     if guild_config.guild_log is not None:
         channel = BOT.get_channel(guild_config.guild_log)
         if channel is not None:
