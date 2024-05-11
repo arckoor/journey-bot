@@ -73,6 +73,7 @@ model GuildConfig {
   guild                          BigInt   @unique
   guild_log                      BigInt?
   time_zone                      String?  @default("UTC")
+  onboarding_active_since        DateTime @default("1970-01-01T00:00:00Z")
   react_remove_excluded_channels BigInt[] @default([])
   react_remove_greedy_limit      Int?     @default(25)
   new_user_threshold             Int?     @default(14)
