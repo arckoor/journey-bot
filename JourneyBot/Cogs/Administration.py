@@ -1,3 +1,6 @@
+import io
+import sys
+
 import disnake  # noqa
 from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
@@ -79,6 +82,26 @@ class Administration(BaseCog):
             await Logging.bot_log(f"**{cog}** has been reloaded by {inter.author.name}.")
         else:
             await inter.response.send_message("I can't find that cog.", ephemeral=True)
+
+    @commands.slash_command(description="Run any code")
+    @commands.is_owner()
+    @commands.default_member_permissions(manage_guild=True)
+    async def eval(self, inter: ApplicationCommandInteraction, code: str = commands.Param(description="The code to run.")):
+        try:
+            exec(f"async def __ex(self, inter): {code}")
+            stdout_buffer = io.StringIO()
+            sys.stdout = stdout_buffer
+
+            try:
+                output = await locals()["__ex"](self, inter)
+                stdout_output = stdout_buffer.getvalue()
+                await inter.response.send_message(f"```STDOUT:\n{stdout_output}```\n```OUTPUT:\n{output}```")
+            except Exception as e:
+                await inter.response.send_message(f"```{e}```", ephemeral=True)
+
+            sys.stdout = sys.__stdout__
+        except Exception as e:
+            await inter.response.send_message(f"```{e}```", ephemeral=True)
 
 
 def setup(bot: commands.Bot):

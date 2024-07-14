@@ -35,6 +35,8 @@ class ModLog(BaseCog):
         elif not perms.embed_links:
             await inter.response.send_message("I don't have permission to embed links in that channel.", ephemeral=True)
             return
+
+        _ = await get_guild_config(inter.guild_id)
         await db.guildconfig.update(
             where={
                 "guild": inter.guild_id
@@ -47,6 +49,7 @@ class ModLog(BaseCog):
 
     @ml_config.sub_command(name="new-threshold", description="Set the threshold for new users.")
     async def ml_configure_new_threshold(self, inter: ApplicationCommandInteraction, threshold: int = commands.param(description="The new user threshold (in days)", ge=1)):
+        _ = await get_guild_config(inter.guild_id)
         await db.guildconfig.update(
             where={
                 "guild": inter.guild_id
@@ -68,6 +71,7 @@ class ModLog(BaseCog):
             await inter.response.send_message("I don't know this time zone. See the attached file for all valid values.", file=disnake.File(buffer, filename="time-zones.txt"), ephemeral=True)
             return
 
+        _ = await get_guild_config(inter.guild_id)
         await db.guildconfig.update(
             where={
                 "guild": inter.guild_id
