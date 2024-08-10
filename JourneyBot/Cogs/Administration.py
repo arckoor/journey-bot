@@ -1,11 +1,13 @@
 import io
 import sys
+import textwrap
 
 import disnake  # noqa
 from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 
 from Cogs.BaseCog import BaseCog
+from Database.DBConnector import db  # noqa
 from Util import Configuration, Logging
 
 
@@ -86,22 +88,60 @@ class Administration(BaseCog):
     @commands.slash_command(description="Run any code")
     @commands.is_owner()
     @commands.default_member_permissions(manage_guild=True)
-    async def eval(self, inter: ApplicationCommandInteraction, code: str = commands.Param(description="The code to run.")):
-        try:
-            exec(f"async def __ex(self, inter): {code}")
-            stdout_buffer = io.StringIO()
-            sys.stdout = stdout_buffer
+    async def eval(
+        self,
+        inter: ApplicationCommandInteraction,
+        code: str = commands.Param(description="The code to run.", default=None),
+        message_id: str = commands.Param(description="ID of the message with the code to run.", default=None)
+    ):
+        if not code and not message_id:
+            await inter.response.send_message("You must provide either code or a message ID.", ephemeral=True)
+            return
+        elif message_id and code:
+            await inter.response.send_message("You can't provide both code and message ID.", ephemeral=True)
+            return
 
+        if message_id:
             try:
-                output = await locals()["__ex"](self, inter)
-                stdout_output = stdout_buffer.getvalue()
-                await inter.response.send_message(f"```STDOUT:\n{stdout_output}```\n```OUTPUT:\n{output}```")
+                message_id = int(message_id)
+                message = await inter.channel.fetch_message(message_id)
             except Exception as e:
-                await inter.response.send_message(f"```{e}```", ephemeral=True)
+                await inter.response.send_message(f"Invalid message ID: {e}", ephemeral=True)
+                return
+            if not message:
+                await inter.response.send_message("Message not found.", ephemeral=True)
+            code = message.content
+        if code.startswith("```") and code.endswith("```"):
+            code = "\n".join(code.split("\n")[1:-1])
 
-            sys.stdout = sys.__stdout__
+        to_compile = f"async def __ex(self, inter):\n{textwrap.indent(code, '  ')}"
+        try:
+            exec(to_compile)
         except Exception as e:
-            await inter.response.send_message(f"```{e}```", ephemeral=True)
+            await inter.response.send_message(f"Could not compile: {e.__class__.__name__}: {e}", ephemeral=True)
+            return
+
+        stdout_buffer = io.StringIO()
+        sys.stdout = stdout_buffer
+
+        try:
+            output = await locals()["__ex"](self, inter)
+            stdout_output = stdout_buffer.getvalue()
+
+            res = ""
+            if output is not None:
+                res = f"OUTPUT:\n```{output}```"
+            if stdout_output:
+                res += f"STDOUT:\n```{stdout_output}```"
+
+            if not res:
+                res = "Done."
+
+            await inter.response.send_message(res)
+        except Exception as e:
+            await inter.response.send_message(f"{e.__class__.__name__}: {e}", ephemeral=True)
+
+        sys.stdout = sys.__stdout__
 
 
 def setup(bot: commands.Bot):

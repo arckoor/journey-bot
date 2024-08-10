@@ -1,0 +1,43 @@
+services:
+  bot:
+    image: ghcr.io/arckoor/journey-bot:latest
+    build: .
+    container_name: journey-bot
+    environment:
+      - PYTHONPATH=/
+      - DATABASE_URL=postgresql://journey-bot:${PG_PASSWORD}@db:5432/journey-bot-db
+      - ENV=${ENV}
+    volumes:
+      - ./config/master.json:/JourneyBot/config/master.json:ro
+      - log-data:/JourneyBot/logs
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - journey-bot-network
+  db:
+    image: postgres:16
+    container_name: journey-bot-db
+    restart: always
+    environment:
+      POSTGRES_USER: journey-bot
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: journey-bot-db
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - journey-bot-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+networks:
+  journey-bot-network:
+    driver: bridge
+
+volumes:
+  db-data:
+  log-data:

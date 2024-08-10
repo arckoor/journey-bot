@@ -6,4 +6,3 @@
 *.json
 !*.json.example
 __pycache__/
-upgradeRequest

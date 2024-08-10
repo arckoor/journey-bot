@@ -126,7 +126,7 @@ class Streams(BaseCog):
     @stream_observer.sub_command(name="add", description="Observe a game for streams.")
     async def add(
         self,
-        inter:    ApplicationCommandInteraction,
+        inter:        ApplicationCommandInteraction,
         game_id:      str = commands.Param(name="game-id", description="The ID of the game to watch.", min_length=1),
         template:     str = commands.Param(default=None, description="The template to use for the stream."),
         end_template: str = commands.Param(default=None, description="The template to use for the end of the stream. Gets appended to the message when the stream ends.")

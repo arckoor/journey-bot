@@ -1,0 +1,5 @@
+*
+!requirements.txt
+!JourneyBot/*
+!prisma/*
+!loader.sh
