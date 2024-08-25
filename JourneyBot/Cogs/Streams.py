@@ -287,9 +287,11 @@ class Streams(BaseCog):
                 streams = limit(self.twitch_api.get_streams(game_id=observer.game_id, stream_type="live"), self.max_concurrent_streams)
                 async for stream in streams:
                     if stream.user_id in observer.blacklist \
-                            or stream.game_id != observer.game_id \
-                            or stream.is_mature:
+                            or stream.game_id != observer.game_id:
                         continue
+                    for item in [stream.title, stream.tags]:
+                        if item and "18+" in item:
+                            continue
                     existing_stream, ks_id = await self.check_stream_known(stream, observer.id)
                     message_id = None
                     if not existing_stream:
