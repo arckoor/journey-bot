@@ -1,4 +1,3 @@
-import disnake  # noqa
 from disnake.ext import commands
 
 

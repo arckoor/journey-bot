@@ -1,6 +1,5 @@
 import time
 
-import disnake # noqa
 from disnake import ApplicationCommandInteraction, Forbidden
 from disnake.ext import commands
 

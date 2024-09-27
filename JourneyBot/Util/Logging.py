@@ -6,7 +6,7 @@ import logging
 from logging.handlers import TimedRotatingFileHandler
 import colorama
 
-import disnake  # noqa
+import disnake
 from disnake import Forbidden
 from disnake.ext import commands
 

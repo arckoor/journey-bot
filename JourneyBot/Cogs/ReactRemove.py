@@ -2,7 +2,7 @@ import time
 import datetime
 import re
 
-import disnake # noqa
+import disnake
 from disnake import ApplicationCommandInteraction, Forbidden
 from disnake.ext import commands
 

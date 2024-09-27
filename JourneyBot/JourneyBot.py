@@ -1,7 +1,6 @@
 import signal
 import asyncio
 
-import disnake  # noqa
 from disnake import Intents
 
 from Bot.JourneyBot import JourneyBot

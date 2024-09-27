@@ -1,4 +1,3 @@
-import disnake  # noqa
 from disnake.ext.commands import InteractionBot
 from disnake import utils
 

@@ -3,7 +3,7 @@ import datetime
 
 from dataclasses import dataclass
 
-import disnake # noqa
+import disnake
 from disnake.ext.commands import InteractionBot
 
 

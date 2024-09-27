@@ -86,7 +86,8 @@ model AntiSpamConfig {
   guild                            BigInt            @unique
   enabled                          Boolean           @default(false)
   punishment                       String?           @default("mute")
-  mute_role                        BigInt?
+  timeout_duration                 Int?
+  clean_user                       Boolean           @default(false)
   max_messages                     Int[]             @default([5])
   similar_message_threshold        Float[]           @default([0.95])
   similar_message_re_ban_threshold Float?            @default(0.95)

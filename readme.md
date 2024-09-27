@@ -13,4 +13,4 @@ A bot to take care of various little things in the Journey Discord.
 - Pull the docker image using `docker compose pull`
 - create a `.env` file with `PG_PASSWORD=...` and `ENV=prod`
 - modify the `config/master.json` to your liking
-- run ´docker compose up`
+- run `docker compose up`

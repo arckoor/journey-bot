@@ -2,12 +2,12 @@ import io
 import sys
 import textwrap
 
-import disnake  # noqa
+import disnake
 from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 
 from Cogs.BaseCog import BaseCog
-from Database.DBConnector import db  # noqa
+from Database.DBConnector import db  # noqa, needed for eval
 from Util import Configuration, Logging
 
 
@@ -85,7 +85,7 @@ class Administration(BaseCog):
         else:
             await inter.response.send_message("I can't find that cog.", ephemeral=True)
 
-    @commands.slash_command(description="Run any code")
+    @commands.slash_command(description="Run any code.")
     @commands.is_owner()
     @commands.default_member_permissions(manage_guild=True)
     async def eval(
@@ -94,6 +94,8 @@ class Administration(BaseCog):
         code: str = commands.Param(description="The code to run.", default=None),
         message_id: str = commands.Param(description="ID of the message with the code to run.", default=None)
     ):
+        Logging.info(f"Eval requested by {inter.author.name} ({inter.author.id}).")
+        await Logging.bot_log(f"Eval requested by {inter.author.name} ({inter.author.id}).")
         if not code and not message_id:
             await inter.response.send_message("You must provide either code or a message ID.", ephemeral=True)
             return

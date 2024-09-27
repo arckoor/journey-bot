@@ -2,7 +2,7 @@ import asyncio
 import re
 import datetime
 
-import disnake  # noqa
+import disnake
 from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 
