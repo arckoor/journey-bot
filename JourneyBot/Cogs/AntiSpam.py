@@ -311,6 +311,7 @@ class AntiSpam(BaseCog):
             embed.add_field(name="Ignored channels", value="\n".join([f"<#{channel}>" for channel in as_config.ignored_channels]) or "None", inline=True)
             if as_config.punishment == "mute":
                 embed.add_field(name="Mute duration", value=f"{as_config.timeout_duration} minutes", inline=True)
+            embed.add_field(name="Clean user messages", value=as_config.clean_user, inline=True)
         await inter.response.send_message(embed=embed)
 
     @as_config.sub_command(name="help", description="Show the help for the anti-spam module.")

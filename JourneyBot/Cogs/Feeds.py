@@ -232,9 +232,9 @@ class Feeds(BaseCog):
                 self.restart_attempts[feed.id] = 1
             else:
                 self.restart_attempts[feed.id] += 1
-                if 5 > self.restart_attempts[feed.id] > 2:
-                    await asyncio.sleep(300)
-                if self.restart_attempts[feed.id] > 5:
+                if 10 >= self.restart_attempts[feed.id] > 2:
+                    await asyncio.sleep(450)
+                if self.restart_attempts[feed.id] > 10:
                     await Logging.guild_log(feed.guild, msg_with_emoji("WARN", f"A feed for {feed.subreddit} (`{feed.id}`) has failed to restart 5 times. You can try to restart it manually."))
                     Logging.error(f"Feed {feed.id} ({feed.subreddit}) has failed to restart 5 times.")
                     del self.restart_attempts[feed.id]
