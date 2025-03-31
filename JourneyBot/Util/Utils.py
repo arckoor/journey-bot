@@ -47,7 +47,10 @@ def make_file(bot: InteractionBot, channel_name, messages) -> disnake.File:
             attachments = " | Attachments: " + ",".join(attachment.url for attachment in message.attachments)
         if message.content:
             content = message.content
-        timestamp = datetime.datetime.strftime(disnake.Object(message.id).created_at.astimezone(tz=datetime.timezone.utc), "%H:%M:%S")
+        timestamp = datetime.datetime.strftime(
+            disnake.Object(message.id).created_at.astimezone(tz=datetime.timezone.utc),
+            "%H:%M:%S",
+        )
         out += f"{timestamp} {message.guild.id} - {message.channel.id} - {message.id} | {name} ({message.author.id}) | {content}{reply}{attachments}\r\n"
     buffer = io.BytesIO()
     buffer.write(out.encode("utf-8"))

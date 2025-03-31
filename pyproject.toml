@@ -1,0 +1,7 @@
+[tool.aerich]
+tortoise_orm = "Database.DBConnector.TORTOISE_ORM"
+location = "./migrations"
+src_folder = "./."
+
+[tool.black]
+line-length = 120

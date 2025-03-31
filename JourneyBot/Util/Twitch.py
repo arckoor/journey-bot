@@ -10,10 +10,7 @@ async def initialize():
     if twitch:
         return
     config = Configuration.get_master_var("TWITCH_API")
-    twitch = await Twitch(
-        config.get("CLIENT_ID"),
-        config.get("CLIENT_SECRET")
-    )
+    twitch = await Twitch(config.get("CLIENT_ID"), config.get("CLIENT_SECRET"))
     Logging.info("Twitch has been initialized.")
 
 

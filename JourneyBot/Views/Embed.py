@@ -11,11 +11,8 @@ def default_embed(title=None, description=None, author=None, icon_url=None):
         title=title,
         description=description,
         timestamp=now,
-        color=disnake.Color(int(Configuration.get_master_var("EMBED_COLOR"), 16))
+        color=disnake.Color(int(Configuration.get_master_var("EMBED_COLOR"), 16)),
     )
     if author and icon_url:
-        embed.set_footer(
-            text=f"Requested by {author}",
-            icon_url=icon_url
-        )
+        embed.set_footer(text=f"Requested by {author}", icon_url=icon_url)
     return embed

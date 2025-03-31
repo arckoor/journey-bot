@@ -5,9 +5,10 @@ import disnake
 from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 
-from prisma.models import GuildConfig
+import tortoise.exceptions
+
 from Cogs.BaseCog import BaseCog
-from Database.DBConnector import db, get_guild_config
+from Database.DBConnector import get_guild_config, EnsuredRole, GuildConfig
 
 from Views import Embed
 from Util import Logging, Utils
@@ -18,7 +19,7 @@ class EnsureRole(BaseCog):
         super().__init__(bot)
         self.onboarding_cache: dict[int, tuple[bool, datetime.datetime]] = {}
 
-    @commands.slash_command(name="ensure-role", dm_permission=False, description="Ensured role management.")
+    @commands.slash_command(name="ensure-role", description="Ensured role management.")
     @commands.guild_only()
     @commands.default_member_permissions(ban_members=True)
     @commands.bot_has_permissions(manage_roles=True)
@@ -27,11 +28,7 @@ class EnsureRole(BaseCog):
 
     @ensure_role.sub_command(name="list", description="List all ensured roles.")
     async def ensure_role_list(self, inter: ApplicationCommandInteraction):
-        ensured_roles = await db.ensuredrole.find_many(
-            where={
-                "guild": inter.guild_id
-            }
-        )
+        ensured_roles = await EnsuredRole.filter(guild=inter.guild_id).all()
         if not ensured_roles:
             await inter.response.send_message("No roles ensured.", ephemeral=True)
             return
@@ -39,62 +36,47 @@ class EnsureRole(BaseCog):
         embed = Embed.default_embed(
             title="Ensured Roles",
             author=inter.author.name,
-            icon_url=inter.author.avatar.url
+            icon_url=inter.author.avatar.url,
         )
         guild_roles = await inter.guild.fetch_roles()
         roles = [role for role in guild_roles if role.id in [ensured_role.role for ensured_role in ensured_roles]]
-        embed.add_field(name="All ensured roles in the server:", value="\n".join([role.mention for role in roles]))
+        embed.add_field(
+            name="All ensured roles in the server:",
+            value="\n".join([role.mention for role in roles]),
+        )
         await inter.response.send_message(embed=embed)
 
     @ensure_role.sub_command(name="add", description="Add a role to the ensured roles.")
-    async def ensure_role_add(self, inter: ApplicationCommandInteraction, role: disnake.Role = commands.Param(description="The role to ensure.")):
-        if await db.ensuredrole.find_unique(
-            where={
-                "guild_role": {
-                    "guild": inter.guild_id,
-                    "role": role.id
-                }
-            }
-        ):
+    async def ensure_role_add(
+        self,
+        inter: ApplicationCommandInteraction,
+        role: disnake.Role = commands.Param(description="The role to ensure."),
+    ):
+        try:
+            _ = await EnsuredRole.get(guild=inter.guild_id, role=role.id)
             await inter.response.send_message("Role already ensured.", ephemeral=True)
             return
-        await db.ensuredrole.create(
-            data={
-                "guild": inter.guild_id,
-                "role": role.id
-            }
-        )
-        await inter.response.send_message(f"Role {role.name} ensured.")
+        except tortoise.exceptions.DoesNotExist:
+            await EnsuredRole.create(guild=inter.guild_id, role=role.id)
+            await inter.response.send_message(f"Role {role.name} ensured.")
 
     @ensure_role.sub_command(name="remove", description="Remove a role from the ensured roles.")
-    async def ensure_role_remove(self, inter: ApplicationCommandInteraction, role: disnake.Role = commands.Param(description="The role to remove.")):
-        if not await db.ensuredrole.find_unique(
-            where={
-                "guild_role": {
-                    "guild": inter.guild_id,
-                    "role": role.id
-                }
-            }
-        ):
+    async def ensure_role_remove(
+        self,
+        inter: ApplicationCommandInteraction,
+        role: disnake.Role = commands.Param(description="The role to remove."),
+    ):
+        try:
+            ensured_role = await EnsuredRole.get(guild=inter.guild_id, role=role.id)
+            await ensured_role.delete()
+            await inter.response.send_message(f"Role {role.name} no longer ensured.")
+        except tortoise.exceptions.DoesNotExist:
             await inter.response.send_message("Role not ensured.", ephemeral=True)
             return
-        await db.ensuredrole.delete(
-            where={
-                "guild_role": {
-                    "guild": inter.guild_id,
-                    "role": role.id
-                }
-            }
-        )
-        await inter.response.send_message(f"Role {role.name} no longer ensured.")
 
     @ensure_role.sub_command(name="sweep", description="Sweep all members for ensured roles.")
     async def ensure_role_sweep(self, inter: ApplicationCommandInteraction):
-        ensured_roles = await db.ensuredrole.find_many(
-            where={
-                "guild": inter.guild_id
-            }
-        )
+        ensured_roles = await EnsuredRole.filter(guild=inter.guild_id).all()
         if not ensured_roles:
             await inter.response.send_message("No roles ensured.", ephemeral=True)
             return
@@ -126,7 +108,11 @@ class EnsureRole(BaseCog):
             await inter.channel.send(content=reply)
 
     @ensure_role.sub_command(name="set-onboarding-time", description="Set the time onboarding was enabled.")
-    async def ensure_role_set_onboarding_time(self, inter: ApplicationCommandInteraction, time: str = commands.Param(description="The time onboarding was enabled.")):
+    async def ensure_role_set_onboarding_time(
+        self,
+        inter: ApplicationCommandInteraction,
+        time: str = commands.Param(description="The time onboarding was enabled."),
+    ):
         if not (await inter.guild.onboarding()).enabled:
             await inter.response.send_message("Onboarding is not enabled for this guild.", ephemeral=True)
             return
@@ -135,29 +121,26 @@ class EnsureRole(BaseCog):
             timezone = zoneinfo.ZoneInfo(Utils.coalesce(guild_config.time_zone, "UTC"))
             parsed_time = datetime.datetime.strptime(time, "%d-%m-%Y %H:%M:%S").replace(tzinfo=timezone)
         except Exception:
-            await inter.response.send_message(f"Invalid time format. Please use DD-MM-YYYY HH:MM:SS. {guild_config.time_zone} is assumed as a timezone.", ephemeral=True)
+            await inter.response.send_message(
+                f"Invalid time format. Please use DD-MM-YYYY HH:MM:SS. {guild_config.time_zone} is assumed as a timezone.",
+                ephemeral=True,
+            )
             return
 
-        await db.guildconfig.update(
-            where={
-                "guild": inter.guild_id
-            },
-            data={
-                "onboarding_active_since": parsed_time
-            }
-        )
+        guild_config.onboarding_active_since = parsed_time
+        await guild_config.save()
         await inter.response.send_message(f"Onboarding time set to {time}.")
 
     @commands.Cog.listener()
     async def on_member_update(self, _: disnake.Member, after: disnake.Member):
-        ensured_roles = await db.ensuredrole.find_many(
-            where={
-                "guild": after.guild.id
-            }
-        )
+        ensured_roles = await EnsuredRole.filter(guild=after.guild.id).all()
         if not ensured_roles:
             return
-        if not await self.member_is_valid_target(after, await get_guild_config(after.guild.id), await self.get_onboarding_enabled(after.guild.id, after.guild.onboarding)):
+        if not await self.member_is_valid_target(
+            after,
+            await get_guild_config(after.guild.id),
+            await self.get_onboarding_enabled(after.guild.id, after.guild.onboarding),
+        ):
             return
         for ensured_role in ensured_roles:
             guild_roles = await after.guild.fetch_roles()

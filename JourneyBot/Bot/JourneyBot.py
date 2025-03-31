@@ -42,7 +42,9 @@ class JourneyBot(commands.InteractionBot):
                 self.unload_extension(f"Cogs.{cog}")
         return await super().close()
 
-    async def on_slash_command_error(self, inter: ApplicationCommandInteraction, exception: errors.CommandError) -> None:
+    async def on_slash_command_error(
+        self, inter: ApplicationCommandInteraction, exception: errors.CommandError
+    ) -> None:
         if isinstance(exception, errors.NotOwner):
             await inter.response.send_message("You are not the owner of this bot.", ephemeral=True)
         elif isinstance(exception, errors.BotMissingPermissions):

@@ -15,7 +15,7 @@ def initialize():
         client_secret=config.get("CLIENT_SECRET"),
         user_agent=config.get("USER_AGENT"),
         username=config.get("USERNAME"),
-        password=config.get("PASSWORD")
+        password=config.get("PASSWORD"),
     )
     Logging.info("asyncpraw has been initialized.")
 

@@ -9,7 +9,7 @@ BACKUPS = {
     "BAN": "🚪",
     "JOIN": "📥",
     "REACT": "❌",
-    "RSS":  "⇶",
+    "RSS": "⇶",
     "STICKY": "📧",
     "TWITCH": "📺",
     "WARN": "⚠",

@@ -1,6 +1,5 @@
 import json
 
-from Util import Logging
 
 MASTER_CONFIG = dict()
 MASTER_LOADED = False
@@ -19,6 +18,8 @@ def load_master():
             MASTER_CONFIG = json.load(file)
             MASTER_LOADED = True
     except Exception as e:
+        from Util import Logging
+
         Logging.error(f"Failed to load master config: {e}")
         raise e
 

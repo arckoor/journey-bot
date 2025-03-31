@@ -1,4 +1,3 @@
-
 import io
 import time
 import string
@@ -12,9 +11,10 @@ import disnake
 from disnake import ApplicationCommandInteraction, Message, Forbidden
 from disnake.ext import commands, tasks
 
+import tortoise.exceptions
+
 from Cogs.BaseCog import BaseCog
-from Database.DBConnector import db, get_anti_spam_config
-from prisma.models import AntiSpamConfig, PunishedMessage
+from Database.DBConnector import get_anti_spam_config, AntiSpamConfig, PunishedMessage
 from Views import Embed
 from Util import Configuration, Logging, Utils
 from Util.Emoji import msg_with_emoji
@@ -53,7 +53,7 @@ class Bucket:
     def set_max_size(self, max_size: int):
         self.max_size = max_size + self.size_overflow_buffer
         if len(self.bucket) > self.max_size:
-            self.bucket = self.bucket[-self.max_size:]
+            self.bucket = self.bucket[-self.max_size :]
 
     def set_time_frame(self, time_limit: int):
         self.time_limit = time_limit
@@ -65,7 +65,15 @@ class Bucket:
         return len(self.bucket)
 
     def __str__(self):
-        return textwrap.indent("\n".join([f"{msg.id} | {time.strftime('%d/%m/%Y %H:%M:%S', time.gmtime(msg.timestamp))} | {msg.content}" for msg in self.bucket]), prefix=" "*4)
+        return textwrap.indent(
+            "\n".join(
+                [
+                    f"{msg.id} | {time.strftime('%d/%m/%Y %H:%M:%S', time.gmtime(msg.timestamp))} | {msg.content}"
+                    for msg in self.bucket
+                ]
+            ),
+            prefix=" " * 4,
+        )
 
     def add_message(self, message: PoolMessage, score: float):
         self.bucket.append(message)
@@ -100,7 +108,10 @@ class Pool:
 
     async def update_config(self):
         as_config = await get_anti_spam_config(self.guild_id)
-        self.config["violation_trigger"] = [(as_config.similar_message_threshold[i], as_config.max_messages[i]) for i in range(len(as_config.max_messages))]
+        self.config["violation_trigger"] = [
+            (as_config.similar_message_threshold[i], as_config.max_messages[i])
+            for i in range(len(as_config.max_messages))
+        ]
         self.config["max_spam_messages"] = max(as_config.max_messages)
         self.config["min_sim_message_threshold"] = min(as_config.similar_message_threshold)
         self.config["sim_message_re_ban_threshold"] = as_config.similar_message_re_ban_threshold
@@ -129,7 +140,10 @@ class Pool:
                 await self.add_recent_punishment(PunishedMsg(content, time.time()))
                 return True, closest_bucket, confidence
             elif len(closest_bucket) >= max_size - 1:
-                Logging.info(f"User {message.author.name} ({message.author.id}) is close to triggering a violation.\n" + self.print_pool())
+                Logging.info(
+                    f"User {message.author.name} ({message.author.id}) is close to triggering a violation.\n"
+                    + self.print_pool()
+                )
         return False, None, None
 
     def is_recently_punished(self, message: str):
@@ -159,7 +173,12 @@ class Pool:
             return new_bucket, 0
 
     def get_new_bucket(self, user_id):
-        new_bucket = Bucket(self.config["max_spam_messages"], user_id, self.config["time_frame"], self.remove_empty_bucket)
+        new_bucket = Bucket(
+            self.config["max_spam_messages"],
+            user_id,
+            self.config["time_frame"],
+            self.remove_empty_bucket,
+        )
         self.pool[user_id].append(new_bucket)
         Logging.info(f"Created new bucket for user {user_id} in {self.guild_id}.")
         return new_bucket
@@ -207,63 +226,43 @@ class Pool:
             "𝘵": "t",
             "𝘶": "u",
             "𝘸": "w",
-            "𝘺": "y"
+            "𝘺": "y",
         }
         msg = content.lower()
         msg = "".join(replacements.get(char, char) for char in msg)
         msg = "".join(unicodedata.normalize("NFKD", char).encode("ASCII", "ignore").decode() for char in msg)
-        msg = msg.translate(str.maketrans("", "", string.punctuation))  # TODO what if message is only punctuation? (also parse out newlines)
+        msg = msg.translate(
+            str.maketrans("", "", string.punctuation)
+        )  # TODO what if message is only punctuation? (also parse out newlines)
         msg = "".join(reversed(re.sub(r"\A\d+", "", "".join(reversed(msg)))))
         msg = msg.strip()
         return msg
 
     async def add_recent_punishment(self, message: PunishedMsg):
         self.recently_punished.append(message)
-        await db.punishedmessage.find_first(
-            where={
-                "guild": self.guild_id,
-                "content": message.content
-            }
-        )
-        punished_message = await db.punishedmessage.upsert(
-            where={
-                "guild_content": {
-                    "guild": self.guild_id,
-                    "content": message.content
-                }
-            },
-            data={
-                "create": {
-                    "content": message.content,
-                    "timestamp": time.time(),
-                    "guild": self.guild_id,
-                    "AntiSpamConfig": {
-                        "connect": {
-                            "id": self.as_config_id
-                        }
-                    }
-                },
-                "update": {
-                    "timestamp": time.time()
-                }
-            }
-        )
+        try:
+            punished_message = await PunishedMessage.get(guild=self.guild_id, content=message.content)
+            punished_message.timestamp = time.time()
+            await punished_message.save()
+        except tortoise.exceptions.DoesNotExist:
+            as_config = await get_anti_spam_config(self.guild_id)
+            try:
+                punished_message = await PunishedMessage.create(
+                    guild=self.guild_id,
+                    content=message.content,
+                    timestamp=time.time(),
+                    anti_spam_config=as_config,
+                )
+            except tortoise.exceptions.IntegrityError:
+                pass
         Logging.info(f"Added recently punished message {punished_message.id} for guild {self.guild_id}.")
 
     @tasks.loop(hours=4)
     async def remove_recently_punished(self):
-        punished_messages = await db.punishedmessage.find_many(
-            where={
-                "guild": self.guild_id
-            }
-        )
+        punished_messages = await PunishedMessage.filter(guild=self.guild_id).all()
         for message in punished_messages:
-            if time.time() - message.timestamp > 60*60*24*7:  # one week
-                await db.punishedmessage.delete(
-                    where={
-                        "id": message.id
-                    }
-                )
+            if time.time() - message.timestamp > 60 * 60 * 24 * 7:  # one week
+                await message.delete()
                 Logging.info(f"Removed punished message {message.id} for guild {self.guild_id}.")
 
     def print_pool(self):
@@ -271,7 +270,7 @@ class Pool:
             return None
         msg = ""
         for user_id, buckets in self.pool.items():
-            msg += f"User {user_id}:"
+            msg += f"\nUser {user_id}:"
             for bucket in buckets:
                 msg += f"\n  Bucket: ({bucket.last_score}) \n{str(bucket)}"
         return msg
@@ -282,9 +281,14 @@ class AntiSpam(BaseCog):
         super().__init__(bot)
         self.pools: dict[int, Pool] = {}
 
-    @commands.slash_command(name="anti-spam-config", description="Anti-Spam management", dm_permission=False)
+    @commands.slash_command(name="anti-spam-config", description="Anti-Spam management")
     @commands.guild_only()
-    @commands.bot_has_permissions(read_message_history=True, embed_links=True, send_messages=True, view_channel=True)
+    @commands.bot_has_permissions(
+        read_message_history=True,
+        embed_links=True,
+        send_messages=True,
+        view_channel=True,
+    )
     @commands.default_member_permissions(ban_members=True)
     async def as_config(self, inter: ApplicationCommandInteraction):
         pass
@@ -295,22 +299,50 @@ class AntiSpam(BaseCog):
             title="Anti-Spam Config",
             description="Current config of the anti-spam module.",
             author=inter.author.name,
-            icon_url=inter.author.avatar.url
+            icon_url=inter.author.avatar.url,
         )
         as_config = await get_anti_spam_config(inter.guild_id)
         embed.add_field(name="Anti-Spam enabled", value=as_config.enabled, inline=True)
         if as_config.enabled:
             embed.add_field(name="Punishment", value=as_config.punishment, inline=True)
-            embed.add_field(name="Max spam messages", value=", ".join(str(x) for x in as_config.max_messages), inline=True)
+            embed.add_field(
+                name="Max spam messages",
+                value=", ".join(str(x) for x in as_config.max_messages),
+                inline=True,
+            )
             embed.add_field(name="Time frame", value=f"{as_config.time_frame} seconds", inline=True)
-            embed.add_field(name="Similarity threshold(s)", value=", ".join(str(x) for x in as_config.similar_message_threshold), inline=True)
-            re_ban = "Disabled" if as_config.similar_message_re_ban_threshold > 1 else as_config.similar_message_re_ban_threshold
+            embed.add_field(
+                name="Similarity threshold(s)",
+                value=", ".join(str(x) for x in as_config.similar_message_threshold),
+                inline=True,
+            )
+            re_ban = (
+                "Disabled"
+                if as_config.similar_message_re_ban_threshold > 1
+                else as_config.similar_message_re_ban_threshold
+            )
             embed.add_field(name="Similarity re-ban threshold", value=re_ban, inline=True)
-            embed.add_field(name="Trusted users", value="\n".join([f"<@{user}>" for user in as_config.trusted_users]) or "None", inline=True)
-            embed.add_field(name="Trusted roles", value="\n".join([f"<@&{role}>" for role in as_config.trusted_roles]) or "None", inline=True)
-            embed.add_field(name="Ignored channels", value="\n".join([f"<#{channel}>" for channel in as_config.ignored_channels]) or "None", inline=True)
+            embed.add_field(
+                name="Trusted users",
+                value="\n".join([f"<@{user}>" for user in as_config.trusted_users]) or "None",
+                inline=True,
+            )
+            embed.add_field(
+                name="Trusted roles",
+                value="\n".join([f"<@&{role}>" for role in as_config.trusted_roles]) or "None",
+                inline=True,
+            )
+            embed.add_field(
+                name="Ignored channels",
+                value="\n".join([f"<#{channel}>" for channel in as_config.ignored_channels]) or "None",
+                inline=True,
+            )
             if as_config.punishment == "mute":
-                embed.add_field(name="Mute duration", value=f"{as_config.timeout_duration} minutes", inline=True)
+                embed.add_field(
+                    name="Mute duration",
+                    value=f"{as_config.timeout_duration} minutes",
+                    inline=True,
+                )
             embed.add_field(name="Clean user messages", value=as_config.clean_user, inline=True)
         await inter.response.send_message(embed=embed)
 
@@ -320,17 +352,31 @@ class AntiSpam(BaseCog):
             title="Anti-Spam Help",
             description="Help for the anti-spam module.",
             author=inter.author.name,
-            icon_url=inter.author.avatar.url
+            icon_url=inter.author.avatar.url,
         )
-        embed.add_field(name="max-spam-messages", value="The number of similar messages to trigger a violation. Multiple comma-separated values are allowed. For example `6, 4, 2`.", inline=False)
-        embed.add_field(name="similarity-threshold", value="The threshold for when a message is considered similar. " +
-                        "Multiple comma-separated values are allowed. For example. `.9, .95, .99`.", inline=False)
-        embed.add_field(name="Correlation between max-spam-messages and similarity-threshold",
-                        value="The first value of max-spam-messages corresponds to the first value of similarity-threshold, the second to the second, etc. " +
-                        "- In the example above, a user would get punished for 6 messages that are .9 similar, but already for 4 if they are .95 similar and so on.", inline=False)
-        embed.add_field(name="similarity-re-ban-threshold",
-                        value="All recently punished messages are stored. If a message is similar to a recently punished message with a similarity higher than this threshold, " +
-                        "the user is immediately punished. Useful for users that join with new accounts to spam again. Set > 1 to disable this behaviour.", inline=False)
+        embed.add_field(
+            name="max-spam-messages",
+            value="The number of similar messages to trigger a violation. Multiple comma-separated values are allowed. For example `6, 4, 2`.",
+            inline=False,
+        )
+        embed.add_field(
+            name="similarity-threshold",
+            value="The threshold for when a message is considered similar. "
+            + "Multiple comma-separated values are allowed. For example. `.9, .95, .99`.",
+            inline=False,
+        )
+        embed.add_field(
+            name="Correlation between max-spam-messages and similarity-threshold",
+            value="The first value of max-spam-messages corresponds to the first value of similarity-threshold, the second to the second, etc. "
+            + "- In the example above, a user would get punished for 6 messages that are .9 similar, but already for 4 if they are .95 similar and so on.",
+            inline=False,
+        )
+        embed.add_field(
+            name="similarity-re-ban-threshold",
+            value="All recently punished messages are stored. If a message is similar to a recently punished message with a similarity higher than this threshold, "
+            + "the user is immediately punished. Useful for users that join with new accounts to spam again. Set > 1 to disable this behaviour.",
+            inline=False,
+        )
         await inter.response.send_message(embed=embed)
 
     @as_config.sub_command(name="remove", description="Disable the anti-spam module for this guild.")
@@ -339,11 +385,10 @@ class AntiSpam(BaseCog):
         if not as_config.enabled:
             await inter.response.send_message("Anti-spam is already disabled for this guild.", ephemeral=True)
             return
-        await db.antispamconfig.delete(
-            where={
-                "guild": inter.guild_id
-            }
-        )
+        try:
+            await (await AntiSpamConfig.get(guild=inter.guild_id)).delete()
+        except tortoise.exceptions.DoesNotExist:
+            pass
         await inter.response.send_message("Anti-spam removed for this guild.")
 
     @as_config.sub_command_group(name="punished-messages", description="Configure punished messages")
@@ -359,89 +404,128 @@ class AntiSpam(BaseCog):
         embed = Embed.default_embed(
             title="Recently punished messages",
             author=inter.author.name,
-            icon_url=inter.author.avatar.url
+            icon_url=inter.author.avatar.url,
         )
         for message in as_config.recently_punished:
             diff = time.time() - message.timestamp
-            embed.add_field(name=f"ID: {message.id} | Remaining lifespan: {Utils.time_to_text(diff, 60*60*24*7)}", value=message.content, inline=False)
+            embed.add_field(
+                name=f"ID: {message.id} | Remaining lifespan: {Utils.time_to_text(diff, 60*60*24*7)}",
+                value=message.content,
+                inline=False,
+            )
         await inter.response.send_message(embed=embed)
 
     @as_punished_messages.sub_command(name="add", description="Add a punished message.")
-    async def as_punished_messages_add(self, inter: ApplicationCommandInteraction, message: str = commands.Param(name="message", description="The message to add to the punished messages.")):
+    async def as_punished_messages_add(
+        self,
+        inter: ApplicationCommandInteraction,
+        message: str = commands.Param(name="message", description="The message to add to the punished messages."),
+    ):
         as_config = await get_anti_spam_config(inter.guild_id)
         message = Pool.preprocess_content(message)
-        await db.punishedmessage.upsert(
-            where={
-                "guild_content": {
-                    "guild": inter.guild_id,
-                    "content": message
-                }
-            },
-            data={
-                "create": {
-                    "content": message,
-                    "timestamp": time.time(),
-                    "guild": inter.guild_id,
-                    "AntiSpamConfig": {
-                        "connect": {
-                            "id": as_config.id
-                        }
-                    }
-                },
-                "update": {
-                    "timestamp": time.time()
-                }
-            }
-        )
+        try:
+            punished_message = await PunishedMessage.get(guild=inter.guild_id, content=message)
+            punished_message.timestamp = time.time()
+            await punished_message.save()
+        except tortoise.exceptions.DoesNotExist:
+            try:
+                punished_message = await PunishedMessage.create(
+                    guild=inter.guild_id,
+                    content=message,
+                    timestamp=time.time(),
+                    anti_spam_config=as_config,
+                )
+            except tortoise.exceptions.IntegrityError:
+                pass
         await inter.response.send_message("Punished message updated or added.")
         if inter.guild_id in self.pools:
             await self.pools[inter.guild_id].update_config()
 
     @as_punished_messages.sub_command(name="remove", description="Remove a punished message.")
-    async def as_punished_messages_remove(self, inter: ApplicationCommandInteraction, id: int = commands.Param(name="id", description="The id of the message to remove.", ge=1)):
-        punished_message = await db.punishedmessage.find_unique(
-            where={
-                "id": id
-            }
-        )
-        if not punished_message:
+    async def as_punished_messages_remove(
+        self,
+        inter: ApplicationCommandInteraction,
+        id: int = commands.Param(name="id", description="The id of the message to remove.", ge=1),
+    ):
+        try:
+            punished_message = await PunishedMessage.get(id=id, guild=inter.guild_id)
+        except tortoise.exceptions.DoesNotExist:
             await inter.response.send_message("Punished message not found.", ephemeral=True)
-            return
-        await db.punishedmessage.delete(
-            where={
-                "id": id
-            }
-        )
+        await punished_message.delete()
         await inter.response.send_message("Punished message removed.")
         if inter.guild_id in self.pools:
             await self.pools[inter.guild_id].update_config()
 
-    @as_config.sub_command(name="punishment", description="Configure the punishment for the anti-spam module.")
+    @as_config.sub_command(
+        name="punishment",
+        description="Configure the punishment for the anti-spam module.",
+    )
     async def as_configure_punishment(
         self,
         inter: ApplicationCommandInteraction,
-        punishment:               str = commands.Param(name="punishment", description="The punishment for a violation.", choices=["mute", "ban"]),
-        timeout_duration:         int = commands.Param(name="mute-duration", description="The amount of time to mute users, in minutes", default=None, ge=1, lt=28*24*60),
-        max_spam_messages:        str = commands.Param(name="max-spam-messages", description="The number of similar messages to trigger a violation. Multiple comma-separated values are allowed."),
-        similarity_threshold:     str = commands.Param(name="similarity-threshold", description="The threshold for when a message is considered similar. Multiple comma-separated values are allowed."),
-        sim_re_punish_threshold: float = commands.Param(name="similarity-re-punish-threshold", description="The threshold for a message to lead to an immediate re-punish. Set > 1 to disable.", ge=0, le=2),  # noqa
-        time_frame:               int = commands.Param(name="time-frame", description="For how long a message is taken into account (in seconds).", ge=10),
-        clean_user:               bool = commands.Param(name="clean-user", description="Clean the user's messages after punishment.", default=False)
+        punishment: str = commands.Param(
+            name="punishment",
+            description="The punishment for a violation.",
+            choices=["mute", "ban"],
+        ),
+        timeout_duration: int = commands.Param(
+            name="mute-duration",
+            description="The amount of time to mute users, in minutes",
+            default=None,
+            ge=1,
+            lt=28 * 24 * 60,
+        ),
+        max_spam_messages: str = commands.Param(
+            name="max-spam-messages",
+            description="The number of similar messages to trigger a violation. Multiple comma-separated values are allowed.",
+        ),
+        similarity_threshold: str = commands.Param(
+            name="similarity-threshold",
+            description="The threshold for when a message is considered similar. Multiple comma-separated values are allowed.",
+        ),
+        sim_re_punish_threshold: float = commands.Param(
+            name="similarity-re-punish-threshold",
+            description="The threshold for a message to lead to an immediate re-punish. Set > 1 to disable.",
+            ge=0,
+            le=2,
+        ),  # noqa
+        time_frame: int = commands.Param(
+            name="time-frame",
+            description="For how long a message is taken into account (in seconds).",
+            ge=10,
+        ),
+        clean_user: bool = commands.Param(
+            name="clean-user",
+            description="Clean the user's messages after punishment.",
+            default=False,
+        ),
     ):
         try:
             max_spam_messages = self.parse_string_to_list(max_spam_messages, int)
             similarity_threshold = self.parse_string_to_list(similarity_threshold, float)
         except ValueError:
-            await inter.response.send_message("Could not parse max-spam-messages or similarity-threshold. Enter them in the format 'x, y, z'.", ephemeral=True)
+            await inter.response.send_message(
+                "Could not parse max-spam-messages or similarity-threshold. Enter them in the format 'x, y, z'.",
+                ephemeral=True,
+            )
             return
         if len(max_spam_messages) != len(similarity_threshold):
-            await inter.response.send_message("The number of max-spam-messages and similarity-thresholds must be the same.", ephemeral=True)
+            await inter.response.send_message(
+                "The number of max-spam-messages and similarity-thresholds must be the same.",
+                ephemeral=True,
+            )
             return
         elif any(x < 2 for x in max_spam_messages):
-            await inter.response.send_message("Each value of max-spam-messages must be greater than 1.", ephemeral=True)
+            await inter.response.send_message(
+                "Each value of max-spam-messages must be greater than 1.",
+                ephemeral=True,
+            )
             return
         elif any(x < 0 or x > 1 for x in similarity_threshold):
-            await inter.response.send_message("Each value of similarity-threshold must be between 0 and 1.", ephemeral=True)
+            await inter.response.send_message(
+                "Each value of similarity-threshold must be between 0 and 1.",
+                ephemeral=True,
+            )
             return
         if punishment == "mute":
             if not inter.guild.me.guild_permissions.moderate_members:
@@ -451,27 +535,26 @@ class AntiSpam(BaseCog):
             if not inter.guild.me.guild_permissions.ban_members:
                 await inter.response.send_message("I don't have permission to ban members.", ephemeral=True)
                 return
-        _ = await get_anti_spam_config(inter.guild_id)
-        await db.antispamconfig.update(
-            where={
-                "guild": inter.guild_id
-            },
-            data={
-                "punishment":                       punishment,
-                "timeout_duration":                 timeout_duration,
-                "clean_user":                       clean_user,
-                "max_messages":                     max_spam_messages,
-                "similar_message_threshold":        similarity_threshold,
-                "similar_message_re_ban_threshold": sim_re_punish_threshold,
-                "time_frame":                       time_frame,
-                "enabled":                          True
-            }
-        )
+
+        as_config = await get_anti_spam_config(inter.guild_id)
+        as_config.punishment = punishment
+        as_config.timeout_duration = timeout_duration
+        as_config.clean_user = clean_user
+        as_config.max_messages = max_spam_messages
+        as_config.similar_message_threshold = similarity_threshold
+        as_config.similar_message_re_ban_threshold = sim_re_punish_threshold
+        as_config.time_frame = time_frame
+        as_config.enabled = True
+        await as_config.save()
+
         await inter.response.send_message(f"Punishment set to {punishment}.")
         if inter.guild_id in self.pools:
             await self.pools[inter.guild_id].update_config()
 
-    @as_config.sub_command_group(name="trusted-roles", description="Configure the trusted roles for the anti-spam module.")
+    @as_config.sub_command_group(
+        name="trusted-roles",
+        description="Configure the trusted roles for the anti-spam module.",
+    )
     async def as_configure_trusted_roles(self, inter: ApplicationCommandInteraction):
         pass
 
@@ -481,14 +564,8 @@ class AntiSpam(BaseCog):
         if role.id in as_config.trusted_roles:
             await inter.response.send_message("That role is already trusted.", ephemeral=True)
             return
-        await db.antispamconfig.update(
-            where={
-                "guild": inter.guild_id
-            },
-            data={
-                "trusted_roles": as_config.trusted_roles + [role.id]
-            }
-        )
+        as_config.trusted_roles = as_config.trusted_roles + [role.id]
+        await as_config.save()
         await inter.response.send_message(f"Role {role.name} (`{role.id}`) added to trusted roles.")
 
     @as_configure_trusted_roles.sub_command(name="remove", description="Remove a trusted role.")
@@ -497,17 +574,14 @@ class AntiSpam(BaseCog):
         if role.id not in as_config.trusted_roles:
             await inter.response.send_message("That role is not trusted.", ephemeral=True)
             return
-        await db.antispamconfig.update(
-            where={
-                "guild": inter.guild_id
-            },
-            data={
-                "trusted_roles": [x for x in as_config.trusted_roles if x != role.id]
-            }
-        )
+        as_config.trusted_roles = [x for x in as_config.trusted_roles if x != role.id]
+        await as_config.save()
         await inter.response.send_message(f"Role {role.name} (`{role.id}`) removed from trusted roles.")
 
-    @as_config.sub_command_group(name="trusted-users", description="Configure the trusted users for the anti-spam module.")
+    @as_config.sub_command_group(
+        name="trusted-users",
+        description="Configure the trusted users for the anti-spam module.",
+    )
     async def as_configure_trusted_users(self, inter: ApplicationCommandInteraction):
         pass
 
@@ -517,14 +591,8 @@ class AntiSpam(BaseCog):
         if user.id in as_config.trusted_users:
             await inter.response.send_message("That user is already trusted.", ephemeral=True)
             return
-        await db.antispamconfig.update(
-            where={
-                "guild": inter.guild_id
-            },
-            data={
-                "trusted_users": as_config.trusted_users + [user.id]
-            }
-        )
+        as_config.trusted_users = as_config.trusted_users + [user.id]
+        await as_config.save()
         await inter.response.send_message(f"User {user.name} (`{user.id}`) added to trusted users.")
 
     @as_configure_trusted_users.sub_command(name="remove", description="Remove a trusted user.")
@@ -533,57 +601,53 @@ class AntiSpam(BaseCog):
         if user.id not in as_config.trusted_users:
             await inter.response.send_message("That user is not trusted.", ephemeral=True)
             return
-        await db.antispamconfig.update(
-            where={
-                "guild": inter.guild_id
-            },
-            data={
-                "trusted_users": [x for x in as_config.trusted_users if x != user.id]
-            }
-        )
+        as_config.trusted_users = [x for x in as_config.trusted_users if x != user.id]
+        await as_config.save()
         await inter.response.send_message(f"User {user.name} (`{user.id}`) removed from trusted users.")
 
-    @as_config.sub_command_group(name="ignored-channels", description="Configure ignored channels for the anti-spam module.")
+    @as_config.sub_command_group(
+        name="ignored-channels",
+        description="Configure ignored channels for the anti-spam module.",
+    )
     async def as_configure_ignored_channel(self, inter: ApplicationCommandInteraction):
         pass
 
     @as_configure_ignored_channel.sub_command(name="add", description="Add an ignored channel.")
-    async def as_configure_ignored_channel_add(self, inter: ApplicationCommandInteraction, channel: disnake.TextChannel):
+    async def as_configure_ignored_channel_add(
+        self, inter: ApplicationCommandInteraction, channel: disnake.TextChannel
+    ):
         as_config = await get_anti_spam_config(inter.guild_id)
         if channel.id in as_config.ignored_channels:
             await inter.response.send_message("That channel is already ignored.", ephemeral=True)
             return
-        await db.antispamconfig.update(
-            where={
-                "guild": inter.guild_id
-            },
-            data={
-                "ignored_channels": as_config.ignored_channels + [channel.id]
-            }
-        )
+        as_config.ignored_channels = as_config.ignored_channels + [channel.id]
+        await as_config.save()
         await inter.response.send_message(f"Channel {channel.name} (`{channel.id}`) added to ignored channels.")
 
     @as_configure_ignored_channel.sub_command(name="remove", description="Remove an ignored channel.")
-    async def as_configure_ignored_channel_remove(self, inter: ApplicationCommandInteraction, channel: disnake.TextChannel):
+    async def as_configure_ignored_channel_remove(
+        self, inter: ApplicationCommandInteraction, channel: disnake.TextChannel
+    ):
         as_config = await get_anti_spam_config(inter.guild_id)
         if channel.id not in as_config.ignored_channels:
             await inter.response.send_message("That channel is not ignored.", ephemeral=True)
             return
-        await db.antispamconfig.update(
-            where={
-                "guild": inter.guild_id
-            },
-            data={
-                "ignored_channels": [x for x in as_config.ignored_channels if x != channel.id]
-            }
-        )
+        as_config.ignored_channels = [x for x in as_config.ignored_channels if x != channel.id]
+        await as_config.save()
         await inter.response.send_message(f"Channel {channel.name} (`{channel.id}`) removed from ignored channels.")
 
-    @commands.slash_command(description="Print the current pool.", guild_ids=[Configuration.get_master_var("ADMIN_GUILD", 0)])
+    @commands.slash_command(
+        description="Print the current pool.",
+        guild_ids=[Configuration.get_master_var("ADMIN_GUILD", 0)],
+    )
     @commands.is_owner()
     @commands.guild_only()
     @commands.default_member_permissions(administrator=True)
-    async def pool(self, inter: disnake.ApplicationCommandInteraction, id: int = commands.Param(description="The guild id to print the pool of.", large=True, default=None)):
+    async def pool(
+        self,
+        inter: disnake.ApplicationCommandInteraction,
+        id: int = commands.Param(description="The guild id to print the pool of.", large=True, default=None),
+    ):
         if not id:
             id = inter.guild_id
         if id not in self.pools:
@@ -618,25 +682,40 @@ class AntiSpam(BaseCog):
             return
         spam, bucket, confidence = await pool.add_message(message)
         if spam:
-            Logging.info(f"Detected spam by user {message.author.name} (`{message.author.id}`) with confidence {confidence}.")
+            Logging.info(
+                f"Detected spam by user {message.author.name} (`{message.author.id}`) with confidence {confidence}."
+            )
             file = None
             if as_config.punishment == "mute":
                 try:
-                    await message.author.timeout(duration=as_config.timeout_duration * 60, reason=f"Spam detected in #{message.channel.name}")
+                    await message.author.timeout(
+                        duration=as_config.timeout_duration * 60,
+                        reason=f"Spam detected in #{message.channel.name}",
+                    )
                 except Forbidden:
-                    await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"I cannot mute {message.author.name}."))
+                    await Logging.guild_log(
+                        message.guild.id,
+                        msg_with_emoji("WARN", f"I cannot mute {message.author.name}."),
+                    )
                     return
             else:
                 try:
-                    await message.guild.ban(message.author, reason=f"Spam detected in #{message.channel.name}", clean_history_duration=0)
+                    await message.guild.ban(
+                        message.author,
+                        reason=f"Spam detected in #{message.channel.name}",
+                        clean_history_duration=0,
+                    )
                 except Forbidden:
-                    await Logging.guild_log(message.guild.id, msg_with_emoji("WARN", f"I cannot ban {message.author.name}."))
+                    await Logging.guild_log(
+                        message.guild.id,
+                        msg_with_emoji("WARN", f"I cannot ban {message.author.name}."),
+                    )
                     return
             file = await self.cleanup(message, bucket, as_config)
             msg = msg_with_emoji(
                 "BAN",
-                f"{message.author.name} (`{message.author.id}`) has been {'muted' if as_config.punishment == 'mute' else 'banned'} for spam. Confidence: " +
-                f"{confidence:.3f}".rstrip("0").rstrip(".")
+                f"{message.author.name} (`{message.author.id}`) has been {'muted' if as_config.punishment == 'mute' else 'banned'} for spam. Confidence: "
+                + f"{confidence:.3f}".rstrip("0").rstrip("."),
             )
             await Logging.guild_log(message.guild.id, message=msg, file=file)
 
@@ -645,7 +724,9 @@ class AntiSpam(BaseCog):
         if guild.id not in self.pools:
             return
         if user.id in self.pools[guild.id].pool:
-            Logging.info(f"{user.name} ({user.id}) has been banned. They had the following pools: {self.pools[guild.id].print_pool()}")
+            Logging.info(
+                f"{user.name} ({user.id}) has been banned. They had the following pools: {self.pools[guild.id].print_pool()}"
+            )
 
     async def cleanup(self, message: Message, bucket: Bucket, config: AntiSpamConfig):
         file = Utils.make_file(self.bot, message.channel.name, (msg for msg in bucket))

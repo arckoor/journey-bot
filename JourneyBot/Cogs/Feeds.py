@@ -6,9 +6,10 @@ import disnake
 from disnake import ApplicationCommandInteraction
 from disnake.ext import commands
 
+import tortoise.exceptions
+
 from Cogs.BaseCog import BaseCog
-from prisma.models import RedditFeed
-from Database.DBConnector import db
+from Database.DBConnector import RedditFeed
 from Views import Embed
 from Util import Utils, Logging, Reddit
 from Util.Emoji import msg_with_emoji
@@ -23,11 +24,11 @@ class Feeds(BaseCog):
         self.restart_attempts: dict[str, int] = {}
 
     async def cog_load(self):
-        for feed in await db.redditfeed.find_many():
+        for feed in await RedditFeed.all():
             self.bot.loop.create_task(self.update_reddit_feed(feed))
 
     async def close(self):
-        for feed in await db.redditfeed.find_many():
+        for feed in await RedditFeed.all():
             if feed.id not in self.stop_requests and feed.id not in self.restarts_available:
                 self.stop_requests.append(feed.id)
         timer = 0
@@ -37,7 +38,7 @@ class Feeds(BaseCog):
             if timer > 60:
                 break
 
-    @commands.slash_command(dm_permission=False, description="Feed management.")
+    @commands.slash_command(description="Feed management.")
     @commands.guild_only()
     @commands.default_member_permissions(ban_members=True)
     @commands.bot_has_permissions(send_messages=True)
@@ -50,21 +51,25 @@ class Feeds(BaseCog):
             title="Feed Help",
             description="Explanation of the template syntax.",
             author=inter.author.name,
-            icon_url=inter.author.avatar.url
+            icon_url=inter.author.avatar.url,
         )
-        embed.add_field(name="Line breaks", value="Line breaks are represented by `\\n`.", inline=False)
-        embed.add_field(name="Variables", value="Variables are replaced with the corresponding value from the feed.", inline=False)
+        embed.add_field(
+            name="Line breaks",
+            value="Line breaks are represented by `\\n`.",
+            inline=False,
+        )
+        embed.add_field(
+            name="Variables",
+            value="Variables are replaced with the corresponding value from the feed.",
+            inline=False,
+        )
         embed.add_field(name="{{title}}", value="The title of the content.", inline=False)
         embed.add_field(name="{{link}}", value="The link to the content.", inline=False)
         await inter.response.send_message(embed=embed, ephemeral=True)
 
     @feed.sub_command(description="List all feeds in the server.")
     async def list(self, inter: ApplicationCommandInteraction):
-        reddit_feeds = await db.redditfeed.find_many(
-            where={
-                "guild": inter.guild_id
-            }
-        )
+        reddit_feeds = await RedditFeed.filter(guild=inter.guild_id).all()
         if not reddit_feeds:
             await inter.response.send_message("No feeds found.", ephemeral=True)
             return
@@ -72,11 +77,18 @@ class Feeds(BaseCog):
             title="Feeds",
             description="List of all feeds in the server.",
             author=inter.author.name,
-            icon_url=inter.author.avatar.url
+            icon_url=inter.author.avatar.url,
         )
         for feed in reddit_feeds:
-            channel: disnake.abc.GuildChannel = Utils.coalesce(self.bot.get_channel(feed.channel), Utils.get_alternate_channel(feed.channel))
-            embed.add_field(name=f"#{channel.name} | ID: {feed.id}", value=f"r/{feed.subreddit}", inline=False)
+            channel: disnake.abc.GuildChannel = Utils.coalesce(
+                self.bot.get_channel(feed.channel),
+                Utils.get_alternate_channel(feed.channel),
+            )
+            embed.add_field(
+                name=f"#{channel.name} | ID: {feed.id}",
+                value=f"r/{feed.subreddit}",
+                inline=False,
+            )
         await inter.response.send_message(embed=embed)
 
     @feed.sub_command_group(description="Add a feed to the server.")
@@ -86,9 +98,14 @@ class Feeds(BaseCog):
     @add.sub_command(description="Add a reddit feed to the server.")
     async def reddit(
         self,
-        inter:          ApplicationCommandInteraction,
-        subreddit_name: str = commands.Param(name="subreddit-name", description="The name of the subreddit.", min_length=1, max_length=21),
-        template:       str = commands.Param(default=None, name="template", description="The template for new posts.")
+        inter: ApplicationCommandInteraction,
+        subreddit_name: str = commands.Param(
+            name="subreddit-name",
+            description="The name of the subreddit.",
+            min_length=1,
+            max_length=21,
+        ),
+        template: str = commands.Param(default=None, name="template", description="The template for new posts."),
     ):
         regex = r"[a-zA-Z0-9_]{1,21}"
         if not re.match(regex, subreddit_name):
@@ -105,65 +122,74 @@ class Feeds(BaseCog):
         except Exception:
             await inter.response.send_message("Subreddit not found.", ephemeral=True)
             return
-        feed = await db.redditfeed.create(
-            data={
-                "guild": inter.guild_id,
-                "channel": inter.channel_id,
-                "subreddit": subreddit_name,
-                "template": template
-            }
+        feed = await RedditFeed.create(
+            guild=inter.guild_id,
+            channel=inter.channel_id,
+            subreddit=subreddit_name,
+            template=template,
         )
         self.bot.loop.create_task(self.update_reddit_feed(feed))
         await inter.response.send_message(f"Added feed for r/{subreddit_name}.")
         await Logging.guild_log(
             inter.guild_id,
-            msg_with_emoji("FEED", f"A feed for r/{subreddit_name} (`{feed.id}`) was added to {inter.channel.mention} by {inter.author.name} (`{inter.author.id}`)")
+            msg_with_emoji(
+                "FEED",
+                f"A feed for r/{subreddit_name} (`{feed.id}`) was added to {inter.channel.mention} by {inter.author.name} (`{inter.author.id}`)",
+            ),
         )
-        Logging.info(f"A feed for r/{subreddit_name} ({feed.id}) was added to channel {inter.channel.name} ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})")
+        Logging.info(
+            f"A feed for r/{subreddit_name} ({feed.id}) was added to channel {inter.channel.name} ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})"
+        )
 
     @feed.sub_command(description="Remove a feed from the server.")
     async def remove(
         self,
         inter: ApplicationCommandInteraction,
-        id: str = commands.Param(name="feed-id", description="The ID of the feed to remove.", min_length=36, max_length=36)
+        id: str = commands.Param(
+            name="feed-id",
+            description="The ID of the feed to remove.",
+            min_length=36,
+            max_length=36,
+        ),
     ):
-        feed = await db.redditfeed.find_first(
-            where={
-                "id": id
-            }
-        )
-        if not feed:
+        try:
+            feed = await RedditFeed.get(id=id, guild=inter.guild_id)
+        except tortoise.exceptions.DoesNotExist:
             await inter.response.send_message("No feed found with that ID.", ephemeral=True)
             return
-        channel: disnake.abc.GuildChannel = Utils.coalesce(self.bot.get_channel(feed.channel), Utils.get_alternate_channel(feed.channel))
-        await db.redditfeed.delete(
-            where={
-                "id": feed.id
-            }
+        channel: disnake.abc.GuildChannel = Utils.coalesce(
+            self.bot.get_channel(feed.channel),
+            Utils.get_alternate_channel(feed.channel),
         )
+        await feed.delete()
         self.stop_requests.append(feed.id)
         await inter.response.send_message("Feed removed.")
         await Logging.guild_log(
             inter.guild_id,
-            msg_with_emoji("FEED", f"A feed for r/{feed.subreddit} (`{feed.id}`) was removed from {channel.mention} by {inter.author.name} (`{inter.author.id}`)")
+            msg_with_emoji(
+                "FEED",
+                f"A feed for r/{feed.subreddit} (`{feed.id}`) was removed from {channel.mention} by {inter.author.name} (`{inter.author.id}`)",
+            ),
         )
         Logging.info(
-            f"A feed for r/{feed.subreddit} ({feed.id}) removed from channel {channel.name}" +
-            f" ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})"
+            f"A feed for r/{feed.subreddit} ({feed.id}) removed from channel {channel.name}"
+            + f" ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})"
         )
 
     @feed.sub_command(description="Manually restart a feed.")
     async def restart(
         self,
         inter: ApplicationCommandInteraction,
-        id: str = commands.Param(name="feed-id", description="The ID of the feed to restart.", min_length=36, max_length=36)
+        id: str = commands.Param(
+            name="feed-id",
+            description="The ID of the feed to restart.",
+            min_length=36,
+            max_length=36,
+        ),
     ):
-        feed = await db.redditfeed.find_first(
-            where={
-                "id": id
-            }
-        )
-        if not feed:
+        try:
+            feed = await RedditFeed.get(id=id, guild=inter.guild_id)
+        except tortoise.exceptions.DoesNotExist:
             await inter.response.send_message("No feed found with that ID.", ephemeral=True)
             return
         if feed.id not in self.restarts_available:
@@ -173,7 +199,10 @@ class Feeds(BaseCog):
         self.bot.loop.create_task(self.update_reddit_feed(feed))
         await Logging.guild_log(
             feed.guild,
-            msg_with_emoji("FEED", f"A feed for {feed.subreddit} (`{feed.id}`) was manually restarted by {inter.author.name} (`{inter.author.id}`)")
+            msg_with_emoji(
+                "FEED",
+                f"A feed for {feed.subreddit} (`{feed.id}`) was manually restarted by {inter.author.name} (`{inter.author.id}`)",
+            ),
         )
         Logging.info(f"Manually restarted feed {feed.id} ({feed.subreddit})")
         await inter.response.send_message("Attempting to restart feed.")
@@ -186,18 +215,12 @@ class Feeds(BaseCog):
                 if feed.id in self.stop_requests:
                     self.stop_requests.remove(feed.id)
                     break
-                post_time = datetime.datetime.utcfromtimestamp(submission.created_utc).replace(tzinfo=datetime.timezone.utc)
+                post_time = datetime.datetime.fromtimestamp(submission.created_utc, tz=datetime.timezone.utc)
                 feed_latest_post = feed.latest_post
                 if post_time > feed_latest_post:
                     await self.post_reddit_feed(feed, submission)
-                    feed = await db.redditfeed.update(
-                        where={
-                            "id": feed.id
-                        },
-                        data={
-                            "latest_post": post_time
-                        }
-                    )
+                    feed.latest_post = post_time
+                    await feed.save()
         except Exception as e:
             await self.handle_post_error(feed, e)
 
@@ -210,7 +233,10 @@ class Feeds(BaseCog):
         if not channel:
             Logging.guild_log(
                 feed.guild,
-                msg_with_emoji("WARN", f"Unable to post to channel {feed.channel} for feed `{feed.id}` ({feed.subreddit})")
+                msg_with_emoji(
+                    "WARN",
+                    f"Unable to post to channel {feed.channel} for feed `{feed.id}` ({feed.subreddit})",
+                ),
             )
             Logging.warning(f"Unable to post to channel {feed.channel} for feed {feed.id} ({feed.subreddit})")
             return
@@ -222,9 +248,13 @@ class Feeds(BaseCog):
         if isinstance(error, PermissionError):
             channel = self.bot.get_channel(feed.channel)
             c = f"channel `{feed.channel}`" if not channel else channel.mention
-            await Logging.guild_log(channel.guild.id, msg_with_emoji(
-                "WARN", f"I could not send a post for feed (`{feed.id}`) in {c}, because I don't have access to the channel. Restart the feed manually after you have resolved the permission issue."
-            ))
+            await Logging.guild_log(
+                channel.guild.id,
+                msg_with_emoji(
+                    "WARN",
+                    f"I could not send a post for feed (`{feed.id}`) in {c}, because I don't have access to the channel. Restart the feed manually after you have resolved the permission issue.",
+                ),
+            )
             Logging.warning(f"Could not send post for feed {feed.id}. Channel {feed.channel} not found.")
             self.restarts_available.append(feed.id)
         else:
@@ -235,7 +265,13 @@ class Feeds(BaseCog):
                 if 10 >= self.restart_attempts[feed.id] > 2:
                     await asyncio.sleep(450)
                 if self.restart_attempts[feed.id] > 10:
-                    await Logging.guild_log(feed.guild, msg_with_emoji("WARN", f"A feed for {feed.subreddit} (`{feed.id}`) has failed to restart 5 times. You can try to restart it manually."))
+                    await Logging.guild_log(
+                        feed.guild,
+                        msg_with_emoji(
+                            "WARN",
+                            f"A feed for {feed.subreddit} (`{feed.id}`) has failed to restart 5 times. You can try to restart it manually.",
+                        ),
+                    )
                     Logging.error(f"Feed {feed.id} ({feed.subreddit}) has failed to restart 5 times.")
                     del self.restart_attempts[feed.id]
                     self.restarts_available.append(feed.id)

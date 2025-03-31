@@ -10,8 +10,8 @@ import disnake
 from disnake import Forbidden
 from disnake.ext import commands
 
-from Database.DBConnector import get_guild_config
 from Util import Configuration, Utils
+from Database.DBConnector import get_guild_config
 
 colorama.init()
 
@@ -27,16 +27,20 @@ class ColoredFormatter(logging.Formatter):
     def __init__(self, fmt, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.colors = {
-            "DEBUG":    colorama.Fore.CYAN,
-            "INFO":     colorama.Fore.GREEN,
-            "WARNING":  colorama.Fore.YELLOW,
-            "ERROR":    colorama.Fore.RED,
+            "DEBUG": colorama.Fore.CYAN,
+            "INFO": colorama.Fore.GREEN,
+            "WARNING": colorama.Fore.YELLOW,
+            "ERROR": colorama.Fore.RED,
             "CRITICAL": colorama.Fore.RED,
         }
         self.fmt = fmt
 
     def format(self, record):
-        log_fmt = self.colors[record.levelname] + self.fmt.replace(" -", colorama.Style.RESET_ALL + " -") + colorama.Style.RESET_ALL
+        log_fmt = (
+            self.colors[record.levelname]
+            + self.fmt.replace(" -", colorama.Style.RESET_ALL + " -")
+            + colorama.Style.RESET_ALL
+        )
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
 
@@ -49,7 +53,12 @@ def setup_logging():
     DISCORD_LOGGER.addHandler(discord_handler)
 
     LOGGER.setLevel(logging.DEBUG)
-    bot_handler = TimedRotatingFileHandler(filename="logs/journey-bot.log", when="midnight", backupCount=30, encoding="utf-8")
+    bot_handler = TimedRotatingFileHandler(
+        filename="logs/journey-bot.log",
+        when="midnight",
+        backupCount=30,
+        encoding="utf-8",
+    )
     bot_handler.setFormatter(ColoredFormatter("[%(asctime)s] [%(levelname)s] - %(message)s"))
     LOGGER.addHandler(bot_handler)
     if Configuration.is_dev_env():
@@ -78,7 +87,12 @@ async def bot_log(message: str = None, embed: disnake.Embed = None):
         return await BOT_LOG_CHANNEL.send(content=message, embed=embed)
 
 
-async def guild_log(guild_id: int, message: str = None, embed: disnake.Embed = None, file: disnake.File = None):
+async def guild_log(
+    guild_id: int,
+    message: str = None,
+    embed: disnake.Embed = None,
+    file: disnake.File = None,
+):
     global BOT
     guild_config = await get_guild_config(guild_id)
     timezone = zoneinfo.ZoneInfo(Utils.coalesce(guild_config.time_zone, "UTC"))
@@ -117,7 +131,15 @@ def exception(message: str, error: Exception):
         line = line.replace("\t", "", 1)
         trace = f"{trace}\n{line}"
     LOGGER.error(trace)
-    BOT.loop.create_task(bot_log(embed=disnake.Embed(title="Exception", description=f"```Traceback:\n{trace}\n{str(error)}```", color=disnake.Color.red())))
+    BOT.loop.create_task(
+        bot_log(
+            embed=disnake.Embed(
+                title="Exception",
+                description=f"```Traceback:\n{trace}\n{str(error)}```",
+                color=disnake.Color.red(),
+            )
+        )
+    )
 
 
 def pool_log(message: str):

@@ -6,10 +6,8 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONPATH=/
-      - DATABASE_URL=postgresql://journey-bot:${PG_PASSWORD}@db:5432/journey-bot-db
-      - ENV=${ENV}
     volumes:
-      - ./config/master.json:/JourneyBot/config/master.json:ro
+      - ./config/master.json:/JourneyBot/config/master.json
       - log-data:/JourneyBot/logs
     depends_on:
       db:

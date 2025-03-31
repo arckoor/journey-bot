@@ -1,6 +1,7 @@
-disnake==2.9.0
-asyncpraw==7.7.1
+aerich==0.8.2
+asyncpraw==7.8.1
 colorama==0.4.6
-levenshtein==0.23.0
-prisma==0.11.0
-twitchapi==4.2.1
+disnake==2.10.1
+levenshtein==0.27.1
+tortoise-orm[asyncpg]==0.24.2
+twitchAPI==4.4.0
