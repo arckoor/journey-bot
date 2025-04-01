@@ -30,7 +30,8 @@ class Streams(BaseCog):
         self.filter_words = config.get("FILTER_WORDS", [])
 
     async def cog_load(self):
-        for observer in await StreamObserver.all().prefetch_related("known_streams"):
+        for observer in await StreamObserver.all():
+            await observer.fetch_related("known_streams")
             self.bot.loop.create_task(self.observe_game(observer))
 
     async def close(self):
@@ -344,7 +345,7 @@ class Streams(BaseCog):
                         message_id = await self.post_stream(observer, stream)
                     await self.update_known_stream(observer, stream, ks_id, message_id)
                 try:
-                    observer = StreamObserver.get(id=observer.id)
+                    observer = await StreamObserver.get(id=observer.id).prefetch_related("known_streams")
                 except tortoise.exceptions.DoesNotExist:
                     Logging.info(f"Observer {observer.id} ({observer.game_id}) no longer exists.")
                     break

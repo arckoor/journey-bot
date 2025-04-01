@@ -249,7 +249,7 @@ class Feeds(BaseCog):
             channel = self.bot.get_channel(feed.channel)
             c = f"channel `{feed.channel}`" if not channel else channel.mention
             await Logging.guild_log(
-                channel.guild.id,
+                feed.guild,
                 msg_with_emoji(
                     "WARN",
                     f"I could not send a post for feed (`{feed.id}`) in {c}, because I don't have access to the channel. Restart the feed manually after you have resolved the permission issue.",

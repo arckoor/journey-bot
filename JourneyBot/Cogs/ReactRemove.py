@@ -1,6 +1,7 @@
 import time
 import datetime
 import re
+from dataclasses import dataclass
 
 import disnake
 from disnake import ApplicationCommandInteraction, Forbidden
@@ -13,6 +14,12 @@ from Util import Logging
 from Util.Emoji import msg_with_emoji
 
 
+@dataclass
+class FakeChannel:
+    id: int
+    mention: str
+
+
 async def convert_to_text_channels(inter: ApplicationCommandInteraction, arg: str) -> list[disnake.TextChannel]:
     channels = []
     for channel in re.split("[, ]+", arg):
@@ -21,6 +28,19 @@ async def convert_to_text_channels(inter: ApplicationCommandInteraction, arg: st
             channels.append(channel)
         except commands.ChannelNotFound:
             pass
+    return channels
+
+
+async def convert_to_text_channels_include_non_existant(
+    inter: ApplicationCommandInteraction, arg: str
+) -> list[disnake.TextChannel]:
+    channels = []
+    for channel in re.split("[, ]+", arg):
+        try:
+            channel = await commands.TextChannelConverter().convert(inter, channel)
+            channels.append(channel)
+        except commands.ChannelNotFound:
+            channels.append(FakeChannel(int(channel), f"Unknown Channel: {channel}"))
     return channels
 
 
@@ -275,7 +295,9 @@ class ReactRemove(BaseCog):
     async def rr_config_channels_include(
         self,
         inter: ApplicationCommandInteraction,
-        channels: str = commands.Param(description="The channels to exclude.", converter=convert_to_text_channels),
+        channels: str = commands.Param(
+            description="The channels to re-include.", converter=convert_to_text_channels_include_non_existant
+        ),
     ):
         guild_config = await get_guild_config(inter.guild_id)
         included_mentions = []
