@@ -32,11 +32,9 @@ class Feeds(BaseCog):
             if feed.id not in self.stop_requests and feed.id not in self.restarts_available:
                 self.stop_requests.append(feed.id)
         timer = 0
-        while self.stop_requests:
+        while self.stop_requests and timer <= 60:
             await asyncio.sleep(1)
             timer += 1
-            if timer > 60:
-                break
 
     @commands.slash_command(description="Feed management.")
     @commands.guild_only()

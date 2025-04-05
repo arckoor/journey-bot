@@ -159,6 +159,20 @@ class PunishedMessage(AbstractIncrModel, GuildIDMixin):
         unique_together = (("guild", "content"),)
 
 
+class RedditAutoReply(AbstractIncrModel, GuildIDMixin):
+    subreddit = TextField()
+    latest_post = DatetimeField(auto_now_add=True)
+    management_role = BigIntField()
+
+    flairs: ReverseRelation["RedditFlair"]
+
+
+class RedditFlair(AbstractIncrModel, GuildIDMixin):
+    flair_name = TextField()
+    flair_reply = TextField()
+    auto_reply: ForeignKeyRelation[RedditAutoReply] = ForeignKeyField(f"{app}.RedditAutoReply", related_name="flairs")
+
+
 async def get_guild_config(id: int) -> GuildConfig:
     config, _ = await GuildConfig.get_or_create(guild=id)
     return config
