@@ -21,19 +21,26 @@ class RedditReply(BaseCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
         self.reddit_api = Reddit.get_reddit()
-        self.stop_request = False
+        self.task = None
+        self.sleep_time = 0
+        self.reported_fail = False
+        self.sleep_start = 15
+        self.sleep_stop = 7680
 
     async def cog_load(self):
         auto_reply = await RedditAutoReply.first()
         if auto_reply:
-            self.bot.loop.create_task(self.process_posts(auto_reply))
+            self.task = self.bot.loop.create_task(self.process_posts(auto_reply))
 
     async def close(self):
-        self.stop_request = True
-        timer = 0
-        while self.stop_request and timer <= 60:
-            await asyncio.sleep(1)
-            timer += 1
+        if self.task:
+            self.task.cancel()
+            timer = 0
+            while timer <= 60:
+                if self.task.done():
+                    break
+                await asyncio.sleep(1)
+                timer += 1
 
     @commands.slash_command(description="Reddit reply management.")
     @commands.guild_only()
@@ -82,7 +89,7 @@ class RedditReply(BaseCog):
             subreddit=subreddit_name,
             management_role=mgmt_role.id,
         )
-        self.bot.loop.create_task(self.process_posts(auto_reply))
+        self.task = self.bot.loop.create_task(self.process_posts(auto_reply))
         await inter.response.send_message(f"Subreddit `{subreddit_name}` configured.", ephemeral=True)
         await Logging.bot_log(
             f"Subreddit `{subreddit_name}` for {inter.guild.name} (`{inter.guild_id}`) configured by {inter.user.name} (`{inter.user.id}`)"
@@ -97,7 +104,8 @@ class RedditReply(BaseCog):
             return
 
         await auto_reply.delete()
-        self.stop_request = True
+        self.task.cancel()
+        self.task = None
         await inter.response.send_message("Subreddit deleted.", ephemeral=True)
         await Logging.bot_log(
             f"Subreddit {auto_reply.subreddit} for {inter.guild.name} (`{inter.guild_id}`) deleted by {inter.user.name} (`{inter.user.id}`)"
@@ -226,10 +234,6 @@ class RedditReply(BaseCog):
             try:
                 feed = await self.reddit_api.subreddit(auto_reply.subreddit)
                 async for submission in feed.stream.submissions():
-                    if self.stop_request:
-                        Logging.info(f"Stopped auto-reply for {auto_reply.id} ({auto_reply.subreddit})")
-                        self.stop_request = False
-                        return
                     submission: asyncpraw.models.Submission
                     post_time = datetime.datetime.fromtimestamp(submission.created_utc, tz=datetime.timezone.utc)
                     reply_latest_post = auto_reply.latest_post
@@ -242,16 +246,14 @@ class RedditReply(BaseCog):
                             Logging.info(f"Sent reply for {submission.id} ({auto_reply.subreddit})")
                         auto_reply.latest_post = post_time
                         await auto_reply.save()
-
-            except Exception as e:
-                Logging.error(
-                    f"Error processing posts for auto reply (`{auto_reply.id}`) ({auto_reply.subreddit}): {e}"
-                )
-                await Logging.bot_log(
-                    f"Error processing posts for auto reply {auto_reply.id} ({auto_reply.subreddit}): {e}"
-                )
-                await asyncio.sleep(600)
+                self.sleep_time = 0
+                self.reported_fail = False
+            except asyncio.CancelledError:
+                Logging.info(f"Stopped auto-reply for {auto_reply.id} ({auto_reply.subreddit})")
                 return
+            except Exception as e:
+                Logging.warning(f"Exception process_posts: {e}")
+                await self.handle_post_error(auto_reply)
 
     async def send_reply(self, submission: asyncpraw.models.Submission, flair_reply: RedditFlair):
         try:
@@ -280,6 +282,35 @@ class RedditReply(BaseCog):
             await inter.response.send_message("You do not have permission to use this command.", ephemeral=True)
             return False
         return True
+
+    async def handle_post_error(self, auto_reply: RedditAutoReply):
+        if self.sleep_time == 0:
+            self.sleep_time = self.sleep_start
+        await asyncio.sleep(self.sleep_time)
+        if self.sleep_time < self.sleep_stop:
+            self.sleep_time *= 2
+        else:
+            if not self.reported_fail:
+                total_slept = 0
+                delay = self.sleep_start
+                while delay < self.sleep_stop:
+                    total_slept += delay
+                    delay *= 2
+
+                await Logging.guild_log(
+                    auto_reply.guild,
+                    msg_with_emoji(
+                        "WARN",
+                        f"Reddit auto reply for {auto_reply.subreddit} has been failing for {int((total_slept / 60))} minutes."
+                        + f" It will try to continue restarting every {int((self.sleep_stop / 60))} minutes.",
+                    ),
+                )
+                Logging.error(
+                    f"Reddit auto reply for {auto_reply.subreddit} ({auto_reply.id}) has been failing for {int((total_slept / 60))} minutes."
+                    + f" It will try to continue restarting every {int((self.sleep_stop / 60))} minutes."
+                )
+                self.reported_fail = True
+        self.task = self.bot.loop.create_task(self.process_posts(auto_reply))
 
 
 def setup(bot: commands.Bot):

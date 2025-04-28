@@ -19,20 +19,38 @@ class Feeds(BaseCog):
     def __init__(self, bot: commands.Bot):
         super().__init__(bot)
         self.reddit_api = Reddit.get_reddit()
-        self.stop_requests = []
-        self.restarts_available = []
-        self.restart_attempts: dict[str, int] = {}
+        # actually UUID, but str is good enough
+        self.sleep_times: dict[str, int] = {}
+        self.reported_fails: dict[str, bool] = {}
+        self.tasks: dict[str, asyncio.Task] = {}
+        self.sleep_start = 15
+        self.sleep_stop = 7680
 
     async def cog_load(self):
         for feed in await RedditFeed.all():
-            self.bot.loop.create_task(self.update_reddit_feed(feed))
+            self.spawn_task(feed)
+
+    def spawn_task(self, feed: RedditFeed):
+        if self.sleep_times.get(feed.id) is None:
+            self.sleep_times[feed.id] = 0
+        if self.reported_fails.get(feed.id) is None:
+            self.reported_fails[feed.id] = False
+        task = self.bot.loop.create_task(self.update_reddit_feed(feed))
+        self.tasks[feed.id] = task
 
     async def close(self):
-        for feed in await RedditFeed.all():
-            if feed.id not in self.stop_requests and feed.id not in self.restarts_available:
-                self.stop_requests.append(feed.id)
+        for task in self.tasks.values():
+            task.cancel()
         timer = 0
-        while self.stop_requests and timer <= 60:
+        while timer <= 60:
+            to_del = []
+            for key, task in self.tasks.items():
+                if task.done():
+                    to_del.append(key)
+            for item in to_del:
+                del self.tasks[item]
+            if len(self.tasks) == 0:
+                break
             await asyncio.sleep(1)
             timer += 1
 
@@ -126,7 +144,7 @@ class Feeds(BaseCog):
             subreddit=subreddit_name,
             template=template,
         )
-        self.bot.loop.create_task(self.update_reddit_feed(feed))
+        self.spawn_task(feed)
         await inter.response.send_message(f"Added feed for r/{subreddit_name}.")
         await Logging.guild_log(
             inter.guild_id,
@@ -160,7 +178,8 @@ class Feeds(BaseCog):
             Utils.get_alternate_channel(feed.channel),
         )
         await feed.delete()
-        self.stop_requests.append(feed.id)
+        self.tasks[feed.id].cancel()
+        del self.tasks[feed.id]
         await inter.response.send_message("Feed removed.")
         await Logging.guild_log(
             inter.guild_id,
@@ -210,16 +229,19 @@ class Feeds(BaseCog):
         try:
             subreddit = await self.reddit_api.subreddit(feed.subreddit)
             async for submission in subreddit.stream.submissions():
-                if feed.id in self.stop_requests:
-                    self.stop_requests.remove(feed.id)
-                    break
                 post_time = datetime.datetime.fromtimestamp(submission.created_utc, tz=datetime.timezone.utc)
                 feed_latest_post = feed.latest_post
                 if post_time > feed_latest_post:
                     await self.post_reddit_feed(feed, submission)
                     feed.latest_post = post_time
                     await feed.save()
+            self.sleep_times[feed.id] = 0
+            self.reported_fails[feed.id] = False
+        except asyncio.CancelledError:
+            Logging.info(f"Stopped feed for {feed.id} ({feed.subreddit})")
+            return
         except Exception as e:
+            Logging.warning(f"Exception in handle_post_error for {feed.id}: {e}")
             await self.handle_post_error(feed, e)
 
     async def post_reddit_feed(self, feed: RedditFeed, submission):
@@ -250,34 +272,39 @@ class Feeds(BaseCog):
                 feed.guild,
                 msg_with_emoji(
                     "WARN",
-                    f"I could not send a post for feed (`{feed.id}`) in {c}, because I don't have access to the channel. Restart the feed manually after you have resolved the permission issue.",
+                    f"I could not send a post for feed (`{feed.id}`) in {c}, because I don't have access to the channel. I will try again in 10 minutes.",
                 ),
             )
             Logging.warning(f"Could not send post for feed {feed.id}. Channel {feed.channel} not found.")
-            self.restarts_available.append(feed.id)
+            await asyncio.sleep(60 * 10)
         else:
-            if not self.restart_attempts.get(feed.id):
-                self.restart_attempts[feed.id] = 1
+            if self.sleep_times[feed.id] == 0:
+                self.sleep_times[feed.id] = self.sleep_start
+            await asyncio.sleep(self.sleep_times[feed.id])
+            if self.sleep_times[feed.id] < self.sleep_stop:
+                self.sleep_times[feed.id] *= 2
             else:
-                self.restart_attempts[feed.id] += 1
-                if 10 >= self.restart_attempts[feed.id] > 2:
-                    await asyncio.sleep(450)
-                if self.restart_attempts[feed.id] > 10:
+                if not self.reported_fails[feed.id]:
+                    total_slept = 0
+                    delay = self.sleep_start
+                    while delay < self.sleep_stop:
+                        total_slept += delay
+                        delay *= 2
+
                     await Logging.guild_log(
                         feed.guild,
                         msg_with_emoji(
                             "WARN",
-                            f"A feed for {feed.subreddit} (`{feed.id}`) has failed to restart 5 times. You can try to restart it manually.",
+                            f"A feed for {feed.subreddit} (`{feed.id}`) has been failing for {int((total_slept / 60))} minutes."
+                            + f" It will try to continue restarting every {int((self.sleep_stop / 60))} minutes.",
                         ),
                     )
-                    Logging.error(f"Feed {feed.id} ({feed.subreddit}) has failed to restart 5 times.")
-                    del self.restart_attempts[feed.id]
-                    self.restarts_available.append(feed.id)
-                    return
-            Logging.error(f"Error in feed {feed.id} ({feed.subreddit}): {error}")
-            await asyncio.sleep(60)
-            Logging.info(f"Restarted feed {feed.id} ({feed.subreddit})")
-            self.bot.loop.create_task(self.update_reddit_feed(feed))
+                    Logging.error(
+                        f"A feed for {feed.subreddit} ({feed.id}) has been failing for {int((total_slept / 60))} minutes."
+                        + f" It will try to continue restarting every {int((self.sleep_stop / 60))} minutes."
+                    )
+                    self.reported_fails[feed.id] = True
+        self.spawn_task(feed)
 
 
 def setup(bot: commands.Bot):

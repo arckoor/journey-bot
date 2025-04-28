@@ -7,3 +7,4 @@
 !*.json.example
 __pycache__/
 .nix-shell
+.direnv

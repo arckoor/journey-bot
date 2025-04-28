@@ -9,7 +9,7 @@ import tortoise.exceptions
 from tortoise.expressions import Q
 
 from twitchAPI.twitch import Stream
-from twitchAPI.helper import limit
+from twitchAPI.helper import first, limit
 
 from Cogs.BaseCog import BaseCog
 from Database.DBConnector import StreamObserver, KnownStream
@@ -336,6 +336,10 @@ class Streams(BaseCog):
                     )
                     if stream.user_id in observer.blacklist or stream.game_id != observer.game_id or filtered:
                         continue
+                    user = await first(self.twitch_api.get_users(user_ids=[stream.user_id]))
+                    if user is not None:
+                        if user.description and any(x in user.description.lower() for x in self.filter_words):
+                            continue
                     existing_stream, ks_id = await self.check_stream_known(stream, observer.id)
                     message_id = None
                     if not existing_stream:
