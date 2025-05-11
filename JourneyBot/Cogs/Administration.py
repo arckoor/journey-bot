@@ -118,8 +118,9 @@ class Administration(BaseCog):
             code = "\n".join(code.split("\n")[1:-1])
 
         to_compile = f"async def __ex(self, inter):\n{textwrap.indent(code, '  ')}"
+        env = {}
         try:
-            exec(to_compile)
+            exec(to_compile, globals(), env)
         except Exception as e:
             await inter.response.send_message(f"Could not compile: {e.__class__.__name__}: {e}", ephemeral=True)
             return
@@ -128,7 +129,7 @@ class Administration(BaseCog):
         sys.stdout = stdout_buffer
 
         try:
-            output = await locals()["__ex"](self, inter)
+            output = await env["__ex"](self, inter)
             stdout_output = stdout_buffer.getvalue()
 
             res = ""

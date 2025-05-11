@@ -193,37 +193,6 @@ class Feeds(BaseCog):
             + f" ({inter.channel.guild.name}) by {inter.author.name} ({inter.author.id})"
         )
 
-    @feed.sub_command(description="Manually restart a feed.")
-    async def restart(
-        self,
-        inter: ApplicationCommandInteraction,
-        id: str = commands.Param(
-            name="feed-id",
-            description="The ID of the feed to restart.",
-            min_length=36,
-            max_length=36,
-        ),
-    ):
-        try:
-            feed = await RedditFeed.get(id=id, guild=inter.guild_id)
-        except tortoise.exceptions.DoesNotExist:
-            await inter.response.send_message("No feed found with that ID.", ephemeral=True)
-            return
-        if feed.id not in self.restarts_available:
-            await inter.response.send_message("This feed is not available for restart.", ephemeral=True)
-            return
-        self.restarts_available.remove(feed.id)
-        self.bot.loop.create_task(self.update_reddit_feed(feed))
-        await Logging.guild_log(
-            feed.guild,
-            msg_with_emoji(
-                "FEED",
-                f"A feed for {feed.subreddit} (`{feed.id}`) was manually restarted by {inter.author.name} (`{inter.author.id}`)",
-            ),
-        )
-        Logging.info(f"Manually restarted feed {feed.id} ({feed.subreddit})")
-        await inter.response.send_message("Attempting to restart feed.")
-
     async def update_reddit_feed(self, feed: RedditFeed):
         Logging.info(f"Starting feed {feed.id} ({feed.subreddit})")
         try:
@@ -280,6 +249,7 @@ class Feeds(BaseCog):
         else:
             if self.sleep_times[feed.id] == 0:
                 self.sleep_times[feed.id] = self.sleep_start
+            Logging.info(f"Feed {feed.id} sleeping for {self.sleep_times[feed.id]} seconds.")
             await asyncio.sleep(self.sleep_times[feed.id])
             if self.sleep_times[feed.id] < self.sleep_stop:
                 self.sleep_times[feed.id] *= 2

@@ -183,10 +183,10 @@
                       levenshtein
                       tortoise-orm
                       twitchapi
+                      black
                     ]
                 ))
 
-                black
                 openssl
                 postgresql
               ]
@@ -195,8 +195,6 @@
             shellHook = ''
               export NIX_SHELL_DIR="$PWD/.nix-shell"
               export PGDATA="$NIX_SHELL_DIR/postgres"
-
-              export PYTHONPATH=$(python -c "import site; print(site.getsitepackages()[0])")
             '';
           };
         }
