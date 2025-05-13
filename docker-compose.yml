@@ -8,6 +8,7 @@ services:
       - PYTHONPATH=/
     volumes:
       - ./config/master.json:/JourneyBot/config/master.json
+      - ./config/links.json:/JourneyBot/config/links.json
       - log-data:/JourneyBot/logs
     depends_on:
       db:

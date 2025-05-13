@@ -1,5 +1,6 @@
 import json
 
+MASTER_CONFIG_FILE = "config/master.json"
 
 MASTER_CONFIG = dict()
 MASTER_LOADED = False
@@ -7,14 +8,14 @@ MASTER_LOADED = False
 
 def save_master_var():
     global MASTER_CONFIG
-    with open("config/master.json", "w") as file:
+    with open(MASTER_CONFIG_FILE, "w") as file:
         json.dump(MASTER_CONFIG, file, indent=4, skipkeys=True, sort_keys=True)
 
 
 def load_master():
     global MASTER_CONFIG, MASTER_LOADED
     try:
-        with open("config/master.json", "r") as file:
+        with open(MASTER_CONFIG_FILE, "r") as file:
             MASTER_CONFIG = json.load(file)
             MASTER_LOADED = True
     except Exception as e:

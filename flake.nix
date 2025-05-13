@@ -177,13 +177,14 @@
                     with ps; [
                       aerich
                       asyncpraw
+                      black
                       colorama
                       disnake
                       flake8
                       levenshtein
+                      rapidfuzz
                       tortoise-orm
                       twitchapi
-                      black
                     ]
                 ))
 
