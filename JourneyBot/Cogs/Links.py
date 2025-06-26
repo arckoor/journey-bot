@@ -43,19 +43,18 @@ class Links(BaseCog):
         if link:
             await inter.response.send_message(link)
             return
-        matches = rapidfuzz.process.extract(topic, self.reverse_map.keys(), limit=3, score_cutoff=70)
-        if matches:
+        if len(topic) > 5:
+            matches = rapidfuzz.process.extract(topic, self.reverse_map.keys(), limit=3, score_cutoff=70)
             best_match, score, _ = matches[0]
-            if score >= 90:
+            if score >= 98:
+                await inter.response.send_message(f"{best_match}")
+                return
+            if matches:
+                suggestions = ", ".join(f"`{m[0]}`" for m in matches)
                 await inter.response.send_message(
-                    f"Assuming you meant `{best_match}`: {self.reverse_map.get(best_match)}"
+                    f"No exact match found for {topic}. Did you mean {suggestions}?", ephemeral=True
                 )
                 return
-            suggestions = ", ".join(f"`{m[0]}`" for m in matches)
-            await inter.response.send_message(
-                f"No exact match found for {topic}. Did you mean {suggestions}?", ephemeral=True
-            )
-            return
         await inter.response.send_message("I don't know that link.", ephemeral=True)
 
     @link.sub_command(description="Browse all available links.")

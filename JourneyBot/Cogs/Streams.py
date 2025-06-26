@@ -27,6 +27,7 @@ class Streams(BaseCog):
         self.max_concurrent_streams = config.get("MAX_CONCURRENT_STREAMS", 10)
         self.refresh_interval = config.get("REFRESH_INTERVAL", 60)
         self.offline_threshold = config.get("OFFLINE_THRESHOLD", 60 * 10)
+        self.disappear_threshold = config.get("DISAPPEAR_THRESHOLD", 60 * 2)
         self.filter_words = config.get("FILTER_WORDS", [])
 
     async def cog_load(self):
@@ -330,6 +331,7 @@ class Streams(BaseCog):
                     self.twitch_api.get_streams(game_id=observer.game_id, stream_type="live"),
                     self.max_concurrent_streams,
                 )
+                now = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc)
                 async for stream in streams:
                     filtered = (stream.title and any(x in stream.title.lower() for x in self.filter_words)) or (
                         stream.tags and any(x in tag.lower() for tag in stream.tags for x in self.filter_words)
@@ -347,13 +349,13 @@ class Streams(BaseCog):
                             f"Found new stream for {observer.id}: {stream.id}, {stream.user_name} is playing {stream.game_name} since {stream.started_at}"
                         )
                         message_id = await self.post_stream(observer, stream)
-                    await self.update_known_stream(observer, stream, ks_id, message_id)
+                    await self.update_known_stream(observer, stream, now, ks_id, message_id)
                 try:
                     observer = await StreamObserver.get(id=observer.id).prefetch_related("known_streams")
                 except tortoise.exceptions.DoesNotExist:
                     Logging.info(f"Observer {observer.id} ({observer.game_id}) no longer exists.")
                     break
-                await self.remove_known_streams(observer)
+                await self.remove_known_streams(observer, now)
                 if len(observer.known_streams) == self.max_concurrent_streams:
                     await Logging.guild_log(
                         observer.guild,
@@ -383,11 +385,12 @@ class Streams(BaseCog):
             )
         return True, known_stream.id
 
-    async def update_known_stream(self, observer: StreamObserver, stream: Stream, ks_id, message_id: int = None):
-        current_time = datetime.datetime.now().replace(tzinfo=datetime.timezone.utc)
+    async def update_known_stream(
+        self, observer: StreamObserver, stream: Stream, now: datetime.datetime, ks_id, message_id: int = None
+    ):
         try:
             known_stream = await KnownStream.get(id=ks_id)
-            known_stream.last_seen = current_time
+            known_stream.last_seen = now
             known_stream.stream_id = stream.id
             await known_stream.save()
         except tortoise.exceptions.DoesNotExist:
@@ -396,19 +399,33 @@ class Streams(BaseCog):
                     stream_id=stream.id,
                     user_id=stream.user_id,
                     user_login=stream.user_login,
-                    last_seen=current_time,
+                    first_seen=now,
+                    last_seen=now,
                     message_id=message_id,
                     stream_observer=observer,
                 )
             except tortoise.exceptions.IntegrityError:
                 pass
 
-    async def remove_known_streams(self, observer: StreamObserver):
+    async def remove_known_streams(self, observer: StreamObserver, now: datetime.datetime):
         for ks in observer.known_streams:
-            if (
-                datetime.datetime.now().replace(tzinfo=datetime.timezone.utc)
-                - ks.last_seen.replace(tzinfo=datetime.timezone.utc)
-            ).seconds > self.offline_threshold:
+            first_seen = ks.first_seen.replace(tzinfo=datetime.timezone.utc)
+            last_seen = ks.last_seen.replace(tzinfo=datetime.timezone.utc)
+            # the stream is newer than self.disappear_thresh, and has not been seen for a bit
+            if (last_seen - first_seen).seconds <= self.disappear_threshold and (now - last_seen).seconds > (
+                self.refresh_interval * 3
+            ):
+                message = self.bot.get_message(ks.message_id)
+                if message:
+                    await message.delete()
+                try:
+                    await (await KnownStream.get(id=ks.id)).delete()
+                except tortoise.exceptions.DoesNotExist:
+                    pass
+                Logging.info(
+                    f"Known stream {ks.stream_id} from observer {observer.id} ({observer.game_id}) was removed because it disappeared quickly"
+                )
+            elif (now - last_seen).seconds > self.offline_threshold:
                 message = self.bot.get_message(ks.message_id)
                 if message:
                     await message.edit(

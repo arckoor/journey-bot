@@ -63,7 +63,8 @@ def setup_logging():
     LOGGER.addHandler(bot_handler)
     if Configuration.is_dev_env():
         stdout_handler = logging.StreamHandler(stream=sys.stdout)
-        stdout_handler.setLevel(logging.WARNING)
+        stdout_handler.setLevel(logging.DEBUG)
+        stdout_handler.setFormatter(ColoredFormatter("[%(asctime)s] [%(levelname)s] - %(message)s"))
         LOGGER.addHandler(stdout_handler)
 
     POOL_LOGGER.setLevel(logging.DEBUG)

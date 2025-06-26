@@ -106,6 +106,7 @@ class KnownStream(AbstractIncrModel):
     stream_id = TextField()
     user_id = TextField()
     user_login = TextField()
+    first_seen = DatetimeField(auto_now_add=True)
     last_seen = DatetimeField(auto_now_add=True)
     message_id = BigIntField(null=True)
     stream_observer: ForeignKeyRelation[StreamObserver] = ForeignKeyField(
