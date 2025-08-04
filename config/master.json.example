@@ -35,6 +35,8 @@
         "CLIENT_SECRET": "",
         "MAX_CONCURRENT_STREAMS": 10,
         "OFFLINE_THRESHOLD": 600,
+        "NEW_THRESHOLD": 900,
+        "DISAPPEAR_THRESHOLD": 120,
         "REFRESH_INTERVAL": 60,
         "FILTER_WORDS": []
     }

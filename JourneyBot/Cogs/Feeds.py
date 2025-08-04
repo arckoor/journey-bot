@@ -217,8 +217,6 @@ class Feeds(BaseCog):
         channel = self.bot.get_channel(feed.channel)
         if not channel or not channel.permissions_for(channel.guild.me).send_messages:
             raise PermissionError
-        await channel.trigger_typing()
-        await asyncio.sleep(3)
         if not channel:
             Logging.guild_log(
                 feed.guild,

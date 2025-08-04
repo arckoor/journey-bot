@@ -27,6 +27,7 @@ class Streams(BaseCog):
         self.max_concurrent_streams = config.get("MAX_CONCURRENT_STREAMS", 10)
         self.refresh_interval = config.get("REFRESH_INTERVAL", 60)
         self.offline_threshold = config.get("OFFLINE_THRESHOLD", 60 * 10)
+        self.new_threshold = config.get("NEW_THRESHOLD", 60 * 15)
         self.disappear_threshold = config.get("DISAPPEAR_THRESHOLD", 60 * 2)
         self.filter_words = config.get("FILTER_WORDS", [])
 
@@ -411,21 +412,25 @@ class Streams(BaseCog):
         for ks in observer.known_streams:
             first_seen = ks.first_seen.replace(tzinfo=datetime.timezone.utc)
             last_seen = ks.last_seen.replace(tzinfo=datetime.timezone.utc)
-            # the stream is newer than self.disappear_thresh, and has not been seen for a bit
-            if (last_seen - first_seen).seconds <= self.disappear_threshold and (now - last_seen).seconds > (
-                self.refresh_interval * 3
-            ):
-                message = self.bot.get_message(ks.message_id)
-                if message:
-                    await message.delete()
-                try:
-                    await (await KnownStream.get(id=ks.id)).delete()
-                except tortoise.exceptions.DoesNotExist:
-                    pass
-                Logging.info(
-                    f"Known stream {ks.stream_id} from observer {observer.id} ({observer.game_id}) was removed because it disappeared quickly"
-                )
-            elif (now - last_seen).seconds > self.offline_threshold:
+            # we just updated this stream, so it's most certainly not "old"
+            if last_seen == now:
+                continue
+            changed_game = await self.check_stream_game_changed(ks.user_id, observer.game_id)
+            # the stream started recently enough to look at it in detail
+            if (now - first_seen).seconds <= self.new_threshold:
+                if changed_game or (now - last_seen).seconds >= self.disappear_threshold:
+                    message = self.bot.get_message(ks.message_id)
+                    if message:
+                        await message.delete()
+                    try:
+                        await (await KnownStream.get(id=ks.id)).delete()
+                    except tortoise.exceptions.DoesNotExist:
+                        pass
+                    Logging.info(
+                        f"Known stream {ks.stream_id} from observer {observer.id} ({observer.game_id}) was removed because it disappeared quickly"
+                    )
+            # it's a decently old stream
+            elif changed_game or (now - last_seen).seconds > self.offline_threshold:
                 message = self.bot.get_message(ks.message_id)
                 if message:
                     await message.edit(
@@ -436,6 +441,18 @@ class Streams(BaseCog):
                 except tortoise.exceptions.DoesNotExist:
                     pass
                 Logging.info(f"Removed known stream {ks.stream_id} from observer {observer.id} ({observer.game_id})")
+
+    async def check_stream_game_changed(self, user_id, expected_game_id):
+        stream = [x async for x in self.twitch_api.get_streams(user_id=[user_id])]
+        if len(stream) == 0:
+            return False
+        if len(stream) != 1:
+            Logging.warning(f"Got more that one stream for user {user_id}")
+            return False
+        stream = stream[0]
+        if stream.game_id != expected_game_id:
+            return True
+        return False
 
     async def post_stream(self, observer: StreamObserver, stream: Stream):
         channel = self.bot.get_channel(observer.channel)
@@ -451,8 +468,6 @@ class Streams(BaseCog):
                 f"Unable to post to channel {observer.channel} for feed {observer.id} ({observer.game_id} - {observer.game_name})"
             )
             return
-        await channel.trigger_typing()
-        await asyncio.sleep(3)
         message = observer.template.replace("{{title}}", self.escape(stream.title))
         message = message.replace("{{user}}", self.escape(stream.user_name))
         message = message.replace("{{user_login}}", self.escape(stream.user_login))
