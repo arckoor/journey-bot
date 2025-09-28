@@ -1,22 +1,18 @@
 services:
   bot:
     image: ghcr.io/arckoor/journey-bot:latest
-    build: .
     container_name: journey-bot
     restart: unless-stopped
-    environment:
-      - PYTHONPATH=/
     volumes:
-      - ./config/master.json:/JourneyBot/config/master.json
-      - ./config/links.json:/JourneyBot/config/links.json
-      - log-data:/JourneyBot/logs
+      - ./config.toml:/journey-bot/config.toml
+      - ./links.json:/journey-bot/links.json
     depends_on:
       db:
         condition: service_healthy
     networks:
       - journey-bot-network
   db:
-    image: postgres:16
+    image: postgres:17
     container_name: journey-bot-db
     restart: unless-stopped
     environment:
@@ -40,4 +36,3 @@ networks:
 
 volumes:
   db-data:
-  log-data:

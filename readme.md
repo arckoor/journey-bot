@@ -1,16 +1,19 @@
 # journey-bot
-
-A bot to take care of various little things in the Journey Discord.
+A bot to take care of the various little things in the Journey Discord.
 
 ## Features
-- Fully configurable sticky messages
-- Support for subscribing to Subreddits and sending their posts to a channel
-- React-Spam removal tool
-- Anti-Spam measures regarding text messages, but using string distance algorithms instead of the usual direct comparison
-- Ability to automatically assign roles everyone should have
+This bot is very overspecialised to our needs, and makes a lot of assumptions about its environment, so probably don't try to run it.
+Here's a list of features anyway:
+
+- sticky messages
+- notify on new posts to a subreddit
+- notify on new streams for a game
+- robust repeat message spam detection
+- keep a certain role assigned to all members
+- ... and more
 
 ## Installation
 - Pull the docker image using `docker compose pull`
 - create a `.env` file with `PG_PASSWORD=...`
-- modify the `config/master.json` to your liking
-- run `docker compose up`
+- rename [config.example.toml](/config.example.toml) to `config.toml` and modify it to your liking
+- run `docker compose up -d`
