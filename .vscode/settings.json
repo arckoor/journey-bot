@@ -1,0 +1,10 @@
+{
+  "files.exclude": {
+    ".direnv": true,
+    ".nix-shell": true,
+  },
+  "search.exclude": {
+    ".direnv": true,
+    ".nix-shell": true,
+  }
+}

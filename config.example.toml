@@ -1,0 +1,38 @@
+[bot]
+bot_token = ""
+
+[bot.activity]
+kind = "Custom"
+message = "Running the example config!"
+
+[store.setup]
+postgres_url = "postgres://journey-bot:12345@db:5432/journey-bot-db"
+admin_guild = 0
+bot_log_channel = 0
+embed_color = [255, 255, 255]
+
+[store.emoji]
+ban = 0
+feed = 0
+info = 0
+join = 0
+react = 0
+sticky = 0
+twitch = 0
+warn = 0
+
+[store.api.reddit]
+id = ""
+secret = ""
+username = ""
+password = ""
+user_agent = ""
+
+[store.api.twitch]
+id = ""
+secret = ""
+filter_words = []
+new_threshold = 900.0
+disappear_threshold = 120.0
+offline_threshold = 600.0
+max_concurrent_streams = 20

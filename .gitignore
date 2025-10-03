@@ -1,10 +1,7 @@
-.vscode
-!.vscode/extensions.json
-.env
-*.log
-*.log.*
-*.json
-!*.json.example
-__pycache__/
 .nix-shell
 .direnv
+.env
+/target
+config.toml
+links.json
+result
