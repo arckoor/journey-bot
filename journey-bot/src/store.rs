@@ -15,7 +15,6 @@ use crate::{
 
 pub struct Store {
     pub admin_guild: u64,
-    pub bot_log_channel: u64,
     pub embed_color: (u8, u8, u8),
     pub db: Database,
     pub emoji: EmojiStore,
@@ -54,7 +53,6 @@ impl Store {
         Self {
             emoji,
             admin_guild: setup.admin_guild,
-            bot_log_channel: setup.bot_log_channel,
             embed_color: setup.embed_color,
             db,
             links,

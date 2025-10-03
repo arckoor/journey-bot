@@ -27,4 +27,5 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - run: nix build
       - run: docker image load < result
+      - run: docker tag journey-bot:latest ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
       - run: docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest

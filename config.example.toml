@@ -8,7 +8,6 @@ message = "Running the example config!"
 [store.setup]
 postgres_url = "postgres://journey-bot:12345@db:5432/journey-bot-db"
 admin_guild = 0
-bot_log_channel = 0
 embed_color = [255, 255, 255]
 
 [store.emoji]

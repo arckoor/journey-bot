@@ -56,7 +56,6 @@ pub struct StoreConfig {
 pub struct SetupConfig {
     pub postgres_url: String,
     pub admin_guild: u64,
-    pub bot_log_channel: u64,
     pub embed_color: (u8, u8, u8),
 }
 
