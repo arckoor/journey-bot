@@ -90,7 +90,7 @@ impl CensorScheduler {
                     guild_log(
                         store.clone(),
                         guild_id,
-                        Emoji::Twitch,
+                        Emoji::Info,
                         format!(
                             "Char sequence `{}` was added to the auto-censor-list",
                             added
@@ -104,7 +104,7 @@ impl CensorScheduler {
                     guild_log(
                         store.clone(),
                         guild_id,
-                        Emoji::Twitch,
+                        Emoji::Info,
                         format!(
                             "Char sequence `{}` was removed from the auto-censor-list",
                             removed,
@@ -361,7 +361,7 @@ async fn sheet_set(
     guild_log(
         ctx.data().clone(),
         guild_id,
-        Emoji::Twitch,
+        Emoji::Info,
         guild_log_msg,
         None,
     )

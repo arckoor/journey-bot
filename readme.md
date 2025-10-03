@@ -16,4 +16,5 @@ Here's a list of features anyway:
 - Pull the docker image using `docker compose pull`
 - create a `.env` file with `PG_PASSWORD=...`
 - rename [config.example.toml](/config.example.toml) to `config.toml` and modify it to your liking
+- make sure you have a `links.json` with at least `{}` in it in the current directory
 - run `docker compose up -d`
