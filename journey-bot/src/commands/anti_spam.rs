@@ -134,7 +134,6 @@ impl Pool {
     }
 
     pub async fn update_config(&mut self) -> Result<(), BotError> {
-        // todo check who needs to send a message for this
         self.config = Self::get_config(&self.store, self.guild_id).await?;
         Ok(())
     }

@@ -3,7 +3,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     systems.url = "github:nix-systems/default";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    naersk.url = "github:nix-community/naersk";
+    crane.url = "github:ipetkov/crane";
     flake-utils = {
       url = "github:numtide/flake-utils";
       inputs.systems.follows = "systems";
@@ -13,7 +13,7 @@
   outputs = {
     nixpkgs,
     rust-overlay,
-    naersk,
+    crane,
     flake-utils,
     ...
   } @ inputs:
@@ -71,10 +71,12 @@
           (mkScript "mig" "sea-orm-cli migrate -d sea-migration generate")
         ];
 
-        naersk' = pkgs.callPackage naersk {};
+        craneLib = crane.mkLib pkgs;
 
-        journey-bot = naersk'.buildPackage {
-          src = ./.;
+        journey-bot = craneLib.buildPackage {
+          pname = "journey-bot";
+          version = "latest";
+          src = craneLib.cleanCargoSource ./.;
         };
       in {
         devShells.default = pkgs.mkShell {

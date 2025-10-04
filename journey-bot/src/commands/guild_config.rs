@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc, time::SystemTime};
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use poise::{
     CreateReply,
     serenity_prelude::{
@@ -25,6 +25,7 @@ use crate::{
         "configure_ml_channel",
         "configure_new_threshold",
         "configure_time_zone",
+        "set_onboarding_time",
         "trusted_roles"
     ),
     guild_only,
@@ -121,7 +122,7 @@ async fn configure_ml_channel(
     guild_config.guild_log = Set(Some(channel.id.into()));
     guild_config.update(&ctx.data().db.sea).await?;
 
-    ctx.say(format!("Mod-Log channel set to {}", channel.mention()))
+    ctx.say(format!("Mod-Log channel set to {}.", channel.mention()))
         .await?;
 
     Ok(())
@@ -181,7 +182,32 @@ async fn configure_time_zone(
         .into_active_model();
     guild_config.time_zone = Set(time_zone.clone());
     guild_config.update(&ctx.data().db.sea).await?;
-    ctx.say(format!("Time zone set to {time_zone}")).await?;
+    ctx.say(format!("Time zone set to {time_zone}.")).await?;
+
+    Ok(())
+}
+
+/// Set the time onboarding was enabled.
+#[poise::command(slash_command, rename = "set-onboarding-time")]
+async fn set_onboarding_time(
+    ctx: Context<'_>,
+    #[description = "The time onboarding was enabled."] time: String,
+) -> Result<(), Error> {
+    let mut guild_config = get_config::<sea_entity::guild_config::Entity>(ctx)
+        .await?
+        .into_active_model();
+
+    let str_time = NaiveDateTime::parse_from_str(&time, "%d-%m-%Y %H:%M:%S");
+    let Ok(str_time) = str_time else {
+        eph(ctx, "Invalid time format. Please use DD-MM-YYYY HH:MM:SS. Timestamp is expected to be a UNIX time.").await?;
+        return Ok(());
+    };
+
+    let timestamp = str_time.and_utc().timestamp() as f64;
+    guild_config.onboarding_active_since = Set(timestamp);
+    guild_config.update(&ctx.data().db.sea).await?;
+
+    ctx.say(format!("Onboarding time set to {time}.")).await?;
 
     Ok(())
 }

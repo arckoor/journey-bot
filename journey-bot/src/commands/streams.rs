@@ -277,19 +277,21 @@ impl TwitchScheduler {
             }
         }
 
-        guild_log(
-            store.clone(),
-            guild_id,
-            Emoji::Twitch,
-            format!(
-                "User `{}` had {} message(s) removed from observer `{}` because they were blacklisted.",
-                user_login,
-                posted_streams_count,
-                observer
-            ),
-            None
-        )
-        .await;
+        if posted_streams_count > 0 {
+            guild_log(
+                store.clone(),
+                guild_id,
+                Emoji::Twitch,
+                format!(
+                    "User `{}` had {} message(s) removed from observer `{}` because they were blacklisted.",
+                    user_login,
+                    posted_streams_count,
+                    observer
+                ),
+                None
+            )
+            .await;
+        }
     }
 
     async fn watch_game(id: String, store: Arc<Store>) {
@@ -680,6 +682,7 @@ impl TwitchScheduler {
         "list",
         "info",
         "add",
+        "edit",
         "remove",
         "blacklist_add",
         "blacklist_remove",
@@ -827,8 +830,8 @@ async fn info(
                 ("Game ID", observer.game_id),
                 ("Game name", observer.game_name),
                 ("Channel", channel.to_string()),
-                ("Template", observer.template),
-                ("End template", observer.end_template),
+                ("Template", format!("`{}`", observer.template)),
+                ("End template", format!("`{}`", observer.end_template)),
                 ("Blacklisted users", blacklist),
                 ("Auto blacklisted users", auto_blacklist),
             ]
@@ -971,6 +974,64 @@ async fn add(
     Ok(())
 }
 
+/// Edit a stream observer.
+#[poise::command(slash_command)]
+async fn edit(
+    ctx: Context<'_>,
+    #[description = "The ID of the stream observer to edit."]
+    #[min_length = 10]
+    #[max_length = 10]
+    #[autocomplete = "autocomplete_id"]
+    id: String,
+    #[description = "The new template to use for the observer"] template: Option<String>,
+    #[description = "The new end template to use for the observer"]
+    #[rename = "end-template"]
+    end_template: Option<String>,
+) -> Result<(), Error> {
+    let guild_id = ctx.guild_id().ok_or("Expected to be in a guild")?;
+
+    let Some(observer) = sea_entity::stream_observer::Entity::find_by_id(&id)
+        .filter(sea_entity::stream_observer::Column::GuildId.eq(guild_id.get() as i64))
+        .one(&ctx.data().db.sea)
+        .await?
+    else {
+        eph(ctx, "No stream observer found with that id").await?;
+        return Ok(());
+    };
+
+    if template.is_none() && end_template.is_none() {
+        eph(ctx, "You must specify a new template or a new end template").await?;
+        return Ok(());
+    }
+
+    let mut observer = observer.into_active_model();
+    if let Some(template) = template {
+        observer.template = Set(template.replace("\\n", "\n"));
+    }
+    if let Some(end_template) = end_template {
+        observer.end_template = Set(end_template.replace("\\n", "\n"));
+    }
+    observer.update(&ctx.data().db.sea).await?;
+
+    guild_log(
+        ctx.data().clone(),
+        guild_id,
+        Emoji::Twitch,
+        format!(
+            "Stream observer `{}` was updated by {} (`{}`)",
+            id,
+            ctx.author().name,
+            ctx.author().id
+        ),
+        None,
+    )
+    .await;
+
+    ctx.say("Stream observer updated.").await?;
+
+    Ok(())
+}
+
 /// Remove a stream observer.
 #[poise::command(slash_command)]
 async fn remove(
@@ -1086,7 +1147,7 @@ async fn blacklist_add(
 
     if let Some(user) = user {
         ctx.say(format!(
-            "User {} (`{}`) added to the blacklist.",
+            "User `{}` (`{}`) added to the blacklist.",
             user.display_name, user.id
         ))
         .await?;

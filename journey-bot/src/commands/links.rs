@@ -21,7 +21,6 @@ pub struct Links {
 
 impl Links {
     pub async fn new() -> Self {
-        // todo proper path
         let path = PathBuf::from("./links.json");
         let data = tokio::fs::read_to_string(&path)
             .await
@@ -134,7 +133,6 @@ async fn autocomplete_link<'a>(
 
     let keys = links.keys().collect::<Vec<_>>();
 
-    // todo decide on a proper distance function, jaro might be better
     let comparator =
         rapidfuzz::distance::jaro_winkler::BatchComparator::new(partial.to_lowercase().chars());
     let mut heap = BinaryHeap::with_capacity_min(6);

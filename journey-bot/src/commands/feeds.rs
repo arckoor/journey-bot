@@ -140,7 +140,7 @@ impl RedditScheduler {
 
 #[poise::command(
     slash_command,
-    subcommands("template_help", "list", "add", "remove"),
+    subcommands("template_help", "list", "add", "edit", "remove"),
     guild_only,
     required_permissions = "BAN_MEMBERS",
     required_bot_permissions = "SEND_MESSAGES"
@@ -200,8 +200,8 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
             .await
             .unwrap_or("Unknown".to_string());
         embed = embed.field(
-            format!("#{channel} | ID: {}", feed.id),
-            format!("r/{}", feed.subreddit),
+            format!("#{channel} | r/{} | ID: {}", feed.subreddit, feed.id),
+            format!("`{}`", feed.template),
             false,
         );
     }
@@ -309,6 +309,52 @@ async fn autocomplete_id<'a>(
             .filter(move |m| m.id.starts_with(partial))
             .map(|m| m.id),
     )
+}
+
+/// Edit a feed.
+#[poise::command(slash_command)]
+async fn edit(
+    ctx: Context<'_>,
+    #[description = "The ID of the feed to edit."]
+    #[min_length = 10]
+    #[max_length = 10]
+    #[autocomplete = "autocomplete_id"]
+    id: String,
+    #[description = "The new template to use for the feed"] template: String,
+) -> Result<(), Error> {
+    let guild_id = ctx.guild_id().ok_or("Expected to be in a guild")?;
+
+    let feed = sea_entity::reddit_feed::Entity::find_by_id(&id)
+        .filter(sea_entity::reddit_feed::Column::GuildId.eq(guild_id.get()))
+        .one(&ctx.data().db.sea)
+        .await?;
+
+    let Some(feed) = feed else {
+        eph(ctx, "No feed found with that ID.").await?;
+        return Ok(());
+    };
+
+    let mut feed = feed.into_active_model();
+    feed.template = Set(template.replace("\\n", "\n"));
+    feed.update(&ctx.data().db.sea).await?;
+
+    guild_log(
+        ctx.data().clone(),
+        guild_id,
+        Emoji::Feed,
+        format!(
+            "Feed `{}` was updated by {} (`{}`)",
+            id,
+            ctx.author().name,
+            ctx.author().id
+        ),
+        None,
+    )
+    .await;
+
+    ctx.say("Feed updated.").await?;
+
+    Ok(())
 }
 
 /// Remove a feed from the server.

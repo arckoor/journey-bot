@@ -1,6 +1,5 @@
 use std::{collections::HashMap, sync::Arc};
 
-use chrono::NaiveDateTime;
 use poise::{
     CreateReply,
     serenity_prelude::{
@@ -23,7 +22,7 @@ use crate::{
 
 #[poise::command(
     slash_command,
-    subcommands("list", "add", "remove", "sweep", "set_onboarding_time"),
+    subcommands("list", "add", "remove", "sweep"),
     guild_only,
     required_permissions = "MANAGE_GUILD",
     required_bot_permissions = "MANAGE_ROLES",
@@ -174,32 +173,6 @@ async fn sweep(ctx: Context<'_>) -> Result<(), Error> {
         "I looked at {member_cnt} members and added {role_cnt} roles."
     ))
     .await?;
-
-    Ok(())
-}
-
-/// Set the time onboarding was enabled.
-#[poise::command(slash_command, rename = "set-onboarding-time")]
-async fn set_onboarding_time(
-    ctx: Context<'_>,
-    #[description = "The time onboarding was enabled."] time: String,
-) -> Result<(), Error> {
-    let mut guild_config = get_config::<sea_entity::guild_config::Entity>(ctx)
-        .await?
-        .into_active_model();
-
-    let str_time = NaiveDateTime::parse_from_str(&time, "%d-%m-%Y %H:%M:%S");
-    let Ok(str_time) = str_time else {
-        eph(ctx, "Invalid time format. Please use DD-MM-YYYY HH:MM:SS. Timestamp is expected to be a UNIX time.").await?;
-        return Ok(());
-    };
-
-    let time = str_time.and_utc().timestamp() as f64;
-    guild_config.onboarding_active_since = Set(time);
-    guild_config.update(&ctx.data().db.sea).await?;
-
-    ctx.say(format!("Onboarding time set to {str_time}."))
-        .await?;
 
     Ok(())
 }

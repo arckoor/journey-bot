@@ -95,7 +95,7 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
 
         embed = embed.field(
             format!("#{} | ID: {}", channel_name, sticky.id),
-            sticky.content,
+            format!("`{}`", sticky.content),
             false,
         );
     }
