@@ -14,7 +14,10 @@ use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::{
-    commands::{anti_spam::PoolManager, feeds::RedditScheduler, streams::TwitchScheduler},
+    commands::{
+        anti_spam::PoolManager, censor::CensorScheduler, feeds::RedditScheduler,
+        streams::TwitchScheduler,
+    },
     config::ActivityConfig,
     store::Store,
     utils::{LogError, create_activity},
@@ -90,6 +93,7 @@ pub async fn launch(config: JourneyBotConfig) -> Result<(), serenity::Error> {
                 RedditScheduler::schedule_all(store.clone()).await;
                 TwitchScheduler::schedule_all(store.clone()).await;
                 PoolManager::schedule(store.clone(), rx);
+                CensorScheduler::schedule_all(store.clone()).await;
                 Ok(store)
             })
         })

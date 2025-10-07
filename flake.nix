@@ -68,7 +68,7 @@
             pg_ctl -D $PGDATA stop 2> /dev/null
           '')
 
-          (mkScript "mig" "sea-orm-cli migrate -d sea-migration generate")
+          (mkScript "mig" "sea-orm-cli migrate -d sea-migration generate $1")
         ];
 
         craneLib = crane.mkLib pkgs;

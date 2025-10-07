@@ -28,7 +28,7 @@ use crate::{
     emoji::Emoji,
     store::Store,
     utils::{
-        BotError, LogError, censor_log, eph, guild_log, now, schedule_with_sleep, send_message,
+        BotError, LogError, censor_log, eph, guild_log, now, schedule_at_interval, send_message,
         timestamp_now,
     },
     views::embed::default_embed,
@@ -554,12 +554,12 @@ impl PoolManager {
     }
 
     fn schedule_tasks(self, rx: Receiver<ChannelMessage>) {
-        schedule_with_sleep(
+        schedule_at_interval(
             self.store.clone(),
             Duration::from_secs(60 * 60 * 4),
             Self::expire_old_punished_messages,
         );
-        schedule_with_sleep(
+        schedule_at_interval(
             self.store.clone(),
             Duration::from_secs(60 * 5),
             Self::send_cleanup_message,
@@ -1053,7 +1053,7 @@ async fn pm_add(
         let mut punished_message = punished_message.into_active_model();
         punished_message.timestamp = Set(now);
         punished_message.update(&ctx.data().db.sea).await?;
-        ctx.say("Punished message updated").await?;
+        ctx.say("Punished message updated.").await?;
     } else {
         sea_entity::punished_message::ActiveModel {
             content: Set(content),

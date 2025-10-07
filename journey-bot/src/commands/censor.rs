@@ -1,32 +1,36 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use poise::{
     CreateReply,
     serenity_prelude::{Channel, GuildId, Mentionable, Message},
 };
 use regex::Regex;
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, EntityTrait, IntoActiveModel};
-use tracing::info;
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
+};
 
 use crate::{
     Context, Error,
     db::{get_config, get_config_from_id},
     emoji::Emoji,
     store::Store,
-    utils::{
-        BotError, censor_log, eph, fetch_sheet, fetch_sheet_columns, guild_log, schedule_with_sleep,
-    },
+    utils::{BotError, censor_log, eph, fetch_sheet, guild_log, now, schedule_at_interval},
     views::embed::default_embed,
 };
+
+const CENSOR_LIST_STAGING_TIME: u64 = 60 * 60 * 24;
 
 pub struct CensorScheduler;
 
 impl CensorScheduler {
     pub async fn schedule_all(store: Arc<Store>) {
-        schedule_with_sleep(
-            store,
-            Duration::from_secs(60 * 60 * 2),
-            Self::update_auto_censor_lists,
+        schedule_at_interval(
+            store.clone(),
+            Duration::from_secs(60 * 60),
+            |store: Arc<Store>| async move {
+                Self::update_auto_censor_lists(store.clone()).await;
+                Self::add_staged_censor_items(store.clone()).await;
+            },
         );
     }
 
@@ -39,80 +43,97 @@ impl CensorScheduler {
         };
 
         for config in configs {
-            if let Some(sheet_id) = &config.auto_censor_list_sheet_id {
-                info!("Updating auto censor list for guild {}", config.id);
-                let Ok(sheet) = fetch_sheet(sheet_id).await else {
+            let config_id = config.id.to_string();
+            let guild_id = GuildId::new(config.id as u64);
+
+            if let Some(sheet_id) = config.auto_censor_list_sheet_id.clone() {
+                let columns = config.auto_censor_list_column_names.clone();
+                let Ok((staged, removed)) = store
+                    .db
+                    .stage_new_items::<sea_entity::censor_config::Entity>(
+                        config, &config_id, columns, &sheet_id,
+                    )
+                    .await
+                else {
                     continue;
                 };
-                let columns = config
-                    .auto_censor_list_column_names
-                    .iter()
-                    .collect::<Vec<_>>();
 
-                let Ok(mut columns) = fetch_sheet_columns(sheet, &columns).await else {
-                    continue;
-                };
-
-                let mut censor_list = Vec::new();
-
-                for column in &config.auto_censor_list_column_names {
-                    censor_list.append(&mut columns.remove(column).unwrap());
-                }
-
-                let new = censor_list
-                    .into_iter()
-                    .map(|c| c.to_lowercase())
-                    .collect::<HashSet<_>>();
-                let old = config
-                    .auto_censor_list
-                    .clone()
-                    .into_iter()
-                    .collect::<HashSet<_>>();
-
-                let added = new.difference(&old).cloned().collect::<Vec<_>>();
-                let removed = old.difference(&new).cloned().collect::<Vec<_>>();
-
-                let config_id = config.id;
-                let guild_id = GuildId::new(config.id as u64);
-
-                let mut config = config.into_active_model();
-                config.auto_censor_list = Set(new.into_iter().collect::<Vec<_>>());
-                let _ = config.update(&store.db.sea).await;
-
-                info!(
-                    "Added {} new char sequences to auto-censor-list for guild {}, removed {} char sequences",
-                    added.len(),
-                    config_id,
-                    removed.len()
-                );
-
-                for added in added {
+                let hrs = CENSOR_LIST_STAGING_TIME / 3600;
+                for added in staged {
                     guild_log(
                         store.clone(),
                         guild_id,
                         Emoji::Info,
                         format!(
-                            "Char sequence `{}` was added to the auto-censor-list",
-                            added
+                            "Char sequence `{}` was staged to be added to the censor list in {} hours",
+                            added,
+                            hrs,
                         ),
                         None,
                     )
                     .await;
                 }
 
-                for removed in removed {
-                    guild_log(
-                        store.clone(),
-                        guild_id,
-                        Emoji::Info,
-                        format!(
-                            "Char sequence `{}` was removed from the auto-censor-list",
-                            removed,
-                        ),
-                        None,
-                    )
-                    .await;
+                for (rem, was_staged) in removed {
+                    if was_staged {
+                        guild_log(
+                            store.clone(),
+                            guild_id,
+                            Emoji::Info,
+                            format!(
+                                "Char sequence `{}` was removed from the staging area for the censor list",
+                                rem,
+                            ),
+                            None,
+                        )
+                        .await;
+                    } else {
+                        guild_log(
+                            store.clone(),
+                            guild_id,
+                            Emoji::Info,
+                            format!("Char sequence `{}` was removed from the censor list", rem,),
+                            None,
+                        )
+                        .await;
+                    }
                 }
+            }
+        }
+    }
+
+    async fn add_staged_censor_items(store: Arc<Store>) {
+        let Ok(configs) = sea_entity::censor_config::Entity::find()
+            .all(&store.db.sea)
+            .await
+        else {
+            return;
+        };
+
+        let now = now().as_secs_f64();
+        let diff = now - CENSOR_LIST_STAGING_TIME as f64;
+
+        for config in configs {
+            let config_id = config.id.to_string();
+            let guild_id = GuildId::new(config.id as u64);
+
+            let Ok(committed) = store
+                .db
+                .commit_staged_items::<sea_entity::censor_config::Entity>(&config_id, diff, config)
+                .await
+            else {
+                continue;
+            };
+
+            for added in committed {
+                guild_log(
+                    store.clone(),
+                    guild_id,
+                    Emoji::Info,
+                    format!("Char sequence `{}` was added to the  censor list", added),
+                    None,
+                )
+                .await;
             }
         }
     }
@@ -218,7 +239,7 @@ async fn log_channel(
     censor_config.log_channel = Set(Some(channel.id.into()));
     censor_config.update(&ctx.data().db.sea).await?;
 
-    ctx.say(format!("Censor-log channel set to {}", channel.mention()))
+    ctx.say(format!("Censor-log channel set to {}.", channel.mention()))
         .await?;
 
     Ok(())
@@ -315,13 +336,14 @@ async fn remove(
 #[poise::command(slash_command, rename = "sheet-set")]
 async fn sheet_set(
     ctx: Context<'_>,
-    #[description = "The ID of the google sheet to update the auto-censor-list from."]
+    #[description = "The ID of the google sheet to update the auto censor list from."]
     #[rename = "censor-list-sheet-id"]
     censor_list_sheet_id: String,
-    #[description = "The names of the sheet columns to update the censor-list from, comma separated."]
+    #[description = "The names of the sheet columns to update the censor list from, comma separated."]
     #[rename = "censor-list-column_names"]
     censor_list_sheet_column_names: String,
 ) -> Result<(), Error> {
+    ctx.defer().await?;
     let guild_id = ctx.guild_id().ok_or("Expected to be in a guild")?;
     let censor_config = get_config::<sea_entity::censor_config::Entity>(ctx).await?;
     let re = Regex::new("(, )+").unwrap();
@@ -347,7 +369,7 @@ async fn sheet_set(
     }
 
     let guild_log_msg = format!(
-        "An auto-censor-list sheet `{}` was added by {} (`{}`)",
+        "An auto censor list sheet `{}` was added by {} (`{}`)",
         censor_list_sheet_id,
         ctx.author().name,
         ctx.author().id,
@@ -367,7 +389,7 @@ async fn sheet_set(
     )
     .await;
 
-    ctx.say("Censor-list sheet added").await?;
+    ctx.say("Censor list sheet added.").await?;
 
     CensorScheduler::update_auto_censor_lists(ctx.data().clone()).await;
 
@@ -383,6 +405,7 @@ async fn sheet_remove(ctx: Context<'_>) -> Result<(), Error> {
     if censor_config.auto_censor_list_sheet_id.is_none() {
         eph(ctx, "This observer does not have a blacklist sheet set.").await?;
     };
+    ctx.defer().await?;
 
     let mut censor_config = censor_config.into_active_model();
     censor_config.auto_censor_list = Set(vec![]);
@@ -390,7 +413,10 @@ async fn sheet_remove(ctx: Context<'_>) -> Result<(), Error> {
     censor_config.auto_censor_list_column_names = Set(vec![]);
     censor_config.update(&ctx.data().db.sea).await?;
 
-    ctx.say("Censor-list sheet removed").await?;
+    sea_entity::staged_censor_item::Entity::delete_many()
+        .filter(sea_entity::staged_censor_item::Column::ForeignId.eq(guild_id.get().to_string()))
+        .exec(&ctx.data().db.sea)
+        .await?;
 
     guild_log(
         ctx.data().clone(),
@@ -404,6 +430,8 @@ async fn sheet_remove(ctx: Context<'_>) -> Result<(), Error> {
         None,
     )
     .await;
+
+    ctx.say("Censor list sheet removed.").await?;
 
     Ok(())
 }

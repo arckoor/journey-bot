@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use poise::{
     CreateReply,
@@ -32,13 +28,13 @@ use crate::{
     emoji::Emoji,
     store::Store,
     utils::{
-        BotError, LogError, eph, fetch_sheet, fetch_sheet_columns, guild_log, now,
-        schedule_with_sleep, send_message,
+        BotError, LogError, eph, fetch_sheet, guild_log, now, schedule_at_interval, send_message,
     },
     views::embed::default_embed,
 };
 
 const POSTED_STREAM_LIFETIME: u64 = 60 * 60 * 24 * 27;
+const BLACKLIST_STAGING_TIME: u64 = 60 * 60 * 24;
 
 pub struct TwitchClient {
     token: RwLock<AppAccessToken>,
@@ -116,12 +112,15 @@ impl TwitchScheduler {
             Self::schedule(stream.id, store.clone());
         }
 
-        schedule_with_sleep(
+        schedule_at_interval(
             store.clone(),
             Duration::from_secs(60 * 60),
-            Self::update_auto_blacklists,
+            |store: Arc<Store>| async move {
+                Self::update_auto_blacklists(store.clone()).await;
+                Self::add_staged_censor_items(store.clone()).await;
+            },
         );
-        schedule_with_sleep(
+        schedule_at_interval(
             store.clone(),
             Duration::from_secs(60 * 60 * 2),
             Self::expire_old_posted_streams,
@@ -145,83 +144,118 @@ impl TwitchScheduler {
         };
 
         for observer in observers {
-            if let Some(sheet_id) = &observer.auto_blacklist_sheet_id
-                && let Some(column_name) = &observer.auto_blacklist_column_name
+            if let Some(sheet_id) = observer.auto_blacklist_sheet_id.clone()
+                && let Some(column_name) = observer.auto_blacklist_column_name.clone()
             {
-                info!("Updating auto blacklist for observer {}", observer.id);
-                let Ok(sheet) = fetch_sheet(sheet_id).await else {
-                    continue;
-                };
-                let columns = vec![column_name];
-
-                let Ok(mut columns) = fetch_sheet_columns(sheet, &columns).await else {
-                    continue;
-                };
-
-                let Some(twitch_column) = columns.remove(column_name) else {
-                    continue;
-                };
-
-                let new = twitch_column.clone().into_iter().collect::<HashSet<_>>();
-                let old = observer
-                    .auto_blacklist
-                    .clone()
-                    .into_iter()
-                    .collect::<HashSet<_>>();
-
-                let added = new.difference(&old).cloned().collect::<Vec<_>>();
-                let removed = old.difference(&new).cloned().collect::<Vec<_>>();
-
                 let observer_id = observer.id.clone();
                 let guild_id = GuildId::new(observer.guild_id as u64);
-                let channel_id = ChannelId::new(observer.channel_id as u64);
+                let columns = vec![column_name.to_string()];
+                let Ok((staged, removed)) = store
+                    .db
+                    .stage_new_items::<sea_entity::stream_observer::Entity>(
+                        observer,
+                        &observer_id,
+                        columns,
+                        &sheet_id,
+                    )
+                    .await
+                else {
+                    continue;
+                };
 
-                let mut observer = observer.into_active_model();
-                observer.auto_blacklist = Set(twitch_column);
-                let _ = observer.update(&store.db.sea).await;
-
-                info!(
-                    "Added {} new users to auto-blacklist for observer {}, removed {} users",
-                    added.len(),
-                    observer_id,
-                    removed.len()
-                );
-
-                for added in added {
+                for added in staged {
                     guild_log(
                         store.clone(),
                         guild_id,
                         Emoji::Twitch,
                         format!(
-                            "User `{}` was auto-blacklisted from observer `{}`",
+                            "User `{}` was staged to be added to the blacklist from observer `{}`",
                             added, observer_id
                         ),
                         None,
                     )
                     .await;
-                    Self::delete_posted_streams(
-                        store.clone(),
-                        &observer_id,
-                        guild_id,
-                        channel_id,
-                        &added,
-                    )
-                    .await;
                 }
 
-                for removed in removed {
-                    guild_log(
-                        store.clone(),
-                        guild_id,
-                        Emoji::Twitch,
-                        format!(
-                            "User `{}` was removed from the auto-blacklist for observer `{}`",
-                            removed, observer_id
-                        ),
-                        None,
-                    )
-                    .await;
+                for (rem, was_staged) in removed {
+                    if was_staged {
+                        guild_log(
+                            store.clone(),
+                            guild_id,
+                            Emoji::Twitch,
+                            format!(
+                                "User `{}` was removed from the blacklist staging area for observer `{}`",
+                                rem, observer_id
+                            ),
+                            None,
+                        )
+                        .await;
+                    } else {
+                        guild_log(
+                            store.clone(),
+                            guild_id,
+                            Emoji::Twitch,
+                            format!(
+                                "User `{}` was removed from the blacklist for observer `{}`",
+                                rem, observer_id
+                            ),
+                            None,
+                        )
+                        .await;
+                    }
                 }
+            }
+        }
+    }
+
+    async fn add_staged_censor_items(store: Arc<Store>) {
+        let Ok(observers) = sea_entity::stream_observer::Entity::find()
+            .all(&store.db.sea)
+            .await
+        else {
+            return;
+        };
+
+        let now = now().as_secs_f64();
+        let diff = now - BLACKLIST_STAGING_TIME as f64;
+
+        for observer in observers {
+            let observer_id = observer.id.clone();
+            let guild_id = GuildId::new(observer.guild_id as u64);
+            let channel_id = ChannelId::new(observer.channel_id as u64);
+
+            let Ok(committed) = store
+                .db
+                .commit_staged_items::<sea_entity::stream_observer::Entity>(
+                    &observer_id,
+                    diff,
+                    observer,
+                )
+                .await
+            else {
+                continue;
+            };
+
+            for added in committed {
+                guild_log(
+                    store.clone(),
+                    guild_id,
+                    Emoji::Twitch,
+                    format!(
+                        "User `{}` was blacklisted from observer `{}`",
+                        added, observer_id
+                    ),
+                    None,
+                )
+                .await;
+                Self::delete_posted_streams(
+                    store.clone(),
+                    &observer_id,
+                    guild_id,
+                    channel_id,
+                    &added,
+                )
+                .await;
             }
         }
     }
@@ -855,7 +889,7 @@ async fn add(
     #[description = "The template to use for the stream."] template: Option<String>,
     #[description = "The template to use for the end of the stream. Gets appended to the message when the stream ends."]
     end_template: Option<String>,
-    #[description = "The ID of the google sheet to update the auto-blacklist from."]
+    #[description = "The ID of the google sheet to update the auto blacklist from."]
     #[rename = "blacklist-sheet-id"]
     blacklist_sheet_id: Option<String>,
     #[description = "The name of the column that contains user logins to blacklist"]
@@ -1275,7 +1309,7 @@ async fn blacklist_sheet_set(
     #[autocomplete = "autocomplete_id"]
     #[rename = "observer-id"]
     observer_id: String,
-    #[description = "The ID of the google sheet to update the auto-blacklist from."]
+    #[description = "The ID of the google sheet to update the auto blacklist from."]
     #[rename = "blacklist-sheet-id"]
     blacklist_sheet_id: String,
     #[description = "The name of the column that contains user logins to blacklist"]
@@ -1304,7 +1338,7 @@ async fn blacklist_sheet_set(
     }
 
     let guild_log_msg = format!(
-        "An auto-blacklist sheet `{}` was added for observer `{}` by {} (`{}`)",
+        "An auto blacklist sheet `{}` was added for observer `{}` by {} (`{}`)",
         blacklist_sheet_id,
         observer_id,
         ctx.author().name,
@@ -1325,7 +1359,7 @@ async fn blacklist_sheet_set(
     )
     .await;
 
-    ctx.say("Blacklist sheet added").await?;
+    ctx.say("Blacklist sheet added.").await?;
 
     Ok(())
 }
@@ -1361,7 +1395,7 @@ async fn blacklist_sheet_remove(
     observer.auto_blacklist_column_name = Set(None);
     observer.update(&ctx.data().db.sea).await?;
 
-    ctx.say("Blacklist sheet removed").await?;
+    ctx.say("Blacklist sheet removed.").await?;
 
     Ok(())
 }

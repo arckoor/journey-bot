@@ -56,7 +56,7 @@ pub async fn echo(
 ) -> Result<(), Error> {
     let message = message.replace("\\n", "\n");
     ctx.channel_id().say(&ctx, message).await?;
-    ctx.say("Message sent!").await?;
+    ctx.say("Message sent.").await?;
 
     Ok(())
 }

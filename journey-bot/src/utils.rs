@@ -255,15 +255,19 @@ pub async fn fetch_sheet_columns(
     Ok(data)
 }
 
-pub fn schedule_with_sleep<F, Fut>(store: Arc<Store>, sleep: Duration, f: F)
+pub fn schedule_at_interval<F, Fut>(store: Arc<Store>, interval: Duration, f: F)
 where
     F: Fn(Arc<Store>) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
     tokio::spawn(async move {
+        let mut interval =
+            tokio::time::interval_at(tokio::time::Instant::now() + interval, interval);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
         loop {
             f(store.clone()).await;
-            tokio::time::sleep(sleep).await
+            interval.tick().await;
         }
     });
 }

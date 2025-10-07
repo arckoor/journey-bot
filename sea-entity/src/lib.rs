@@ -9,5 +9,6 @@ pub mod posted_stream;
 pub mod punished_message;
 pub mod reddit_feed;
 pub mod sea_orm_active_enums;
+pub mod staged_censor_item;
 pub mod sticky_message;
 pub mod stream_observer;
