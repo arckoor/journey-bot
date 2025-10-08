@@ -1,9 +1,13 @@
-use poise::{ChoiceParameter, CreateReply, serenity_prelude::ActivityType};
+use poise::{
+    ChoiceParameter, CreateReply,
+    serenity_prelude::{ActivityType, Mentionable},
+};
 use tokio::time::Instant;
 
 use crate::{
     Context, Error,
-    utils::{create_activity, eph},
+    emoji::Emoji,
+    utils::{create_activity, eph, guild_log},
 };
 
 #[derive(ChoiceParameter)]
@@ -54,9 +58,25 @@ pub async fn echo(
     #[max_length = 2000]
     message: String,
 ) -> Result<(), Error> {
+    let guild_id = ctx.guild_id().ok_or("Expected to be in a guild")?;
+
     let message = message.replace("\\n", "\n");
     ctx.channel_id().say(&ctx, message).await?;
     ctx.say("Message sent.").await?;
+
+    guild_log(
+        ctx.data().clone(),
+        guild_id,
+        Emoji::Info,
+        format!(
+            "An echo message was sent in {} by {} (`{}`)",
+            ctx.channel_id().mention(),
+            ctx.author().name,
+            ctx.author().id
+        ),
+        None,
+    )
+    .await;
 
     Ok(())
 }

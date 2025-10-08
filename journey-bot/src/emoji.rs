@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use poise::serenity_prelude::{self as serenity, EmojiId, GuildId, Http};
 
-use crate::config::EmojiConfig;
+use crate::{config::EmojiConfig, utils::BotError};
 
 pub enum Emoji {
     Ban,
@@ -25,21 +25,31 @@ pub struct EmojiStore {
 }
 
 impl EmojiStore {
-    pub async fn new(ctx: Arc<Http>, admin_guild: u64, config: EmojiConfig) -> Self {
+    pub async fn new(
+        ctx: Arc<Http>,
+        admin_guild: u64,
+        config: EmojiConfig,
+    ) -> Result<Self, BotError> {
         let guild_id = GuildId::new(admin_guild);
-        Self {
-            ban: Self::get_emoji(&ctx, guild_id, config.ban).await,
-            feed: Self::get_emoji(&ctx, guild_id, config.feed).await,
-            info: Self::get_emoji(&ctx, guild_id, config.info).await,
-            join: Self::get_emoji(&ctx, guild_id, config.join).await,
-            sticky: Self::get_emoji(&ctx, guild_id, config.sticky).await,
-            twitch: Self::get_emoji(&ctx, guild_id, config.twitch).await,
-            warning: Self::get_emoji(&ctx, guild_id, config.warn).await,
-        }
+        Ok(Self {
+            ban: Self::get_emoji(&ctx, guild_id, config.ban).await?,
+            feed: Self::get_emoji(&ctx, guild_id, config.feed).await?,
+            info: Self::get_emoji(&ctx, guild_id, config.info).await?,
+            join: Self::get_emoji(&ctx, guild_id, config.join).await?,
+            sticky: Self::get_emoji(&ctx, guild_id, config.sticky).await?,
+            twitch: Self::get_emoji(&ctx, guild_id, config.twitch).await?,
+            warning: Self::get_emoji(&ctx, guild_id, config.warn).await?,
+        })
     }
 
-    async fn get_emoji(ctx: &Arc<Http>, guild: GuildId, id: u64) -> serenity::Emoji {
-        ctx.get_emoji(guild, EmojiId::new(id)).await.unwrap()
+    async fn get_emoji(
+        ctx: &Arc<Http>,
+        guild: GuildId,
+        id: u64,
+    ) -> Result<serenity::Emoji, BotError> {
+        ctx.get_emoji(guild, EmojiId::new(id))
+            .await
+            .map_err(|e| BotError::new(e.to_string()))
     }
 
     pub fn get(&self, category: Emoji) -> String {

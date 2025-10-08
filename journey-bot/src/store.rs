@@ -11,6 +11,7 @@ use crate::{
     config::StoreConfig,
     db::Database,
     emoji::EmojiStore,
+    utils::BotError,
 };
 
 pub struct Store {
@@ -31,26 +32,26 @@ impl Store {
         config: StoreConfig,
         ctx: Arc<serenity::Http>,
         anti_spam_sender: Sender<ChannelMessage>,
-    ) -> Self {
+    ) -> Result<Self, BotError> {
         let StoreConfig { setup, emoji, api } = config;
-        let db = Database::new(&setup.postgres_url).await;
-        let emoji = EmojiStore::new(ctx.clone(), setup.admin_guild, emoji).await;
-        let links = Links::new().await;
+        let db = Database::new(&setup.postgres_url).await?;
+        let emoji = EmojiStore::new(ctx.clone(), setup.admin_guild, emoji).await?;
+        let links = Links::new().await?;
 
         let reddit_client = Reddit::new(&api.reddit.user_agent, &api.reddit.id, &api.reddit.secret)
             .username(&api.reddit.username)
             .password(&api.reddit.password)
             .login()
             .await
-            .expect("Failed to open reddit client");
+            .map_err(|_| BotError::new("Failed to open reddit client"))?;
 
         let twitch_client = TwitchClient::new(api.twitch)
             .await
-            .expect("Failed to open twitch client");
+            .map_err(|_| BotError::new("Failed to open twitch client"))?;
 
-        let sticky = StickyLock::new(&db).await;
+        let sticky = StickyLock::new(&db).await?;
 
-        Self {
+        Ok(Self {
             emoji,
             admin_guild: setup.admin_guild,
             embed_color: setup.embed_color,
@@ -61,6 +62,6 @@ impl Store {
             sticky,
             anti_spam_sender,
             ctx,
-        }
+        })
     }
 }

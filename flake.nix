@@ -73,11 +73,19 @@
 
         craneLib = crane.mkLib pkgs;
 
-        journey-bot = craneLib.buildPackage {
+        commonArgs = {
           pname = "journey-bot";
           version = "latest";
           src = craneLib.cleanCargoSource ./.;
         };
+
+        journey-bot-deps =
+          craneLib.buildDepsOnly commonArgs;
+
+        journey-bot = craneLib.buildPackage (commonArgs
+          // {
+            cargoArtifacts = journey-bot-deps;
+          });
       in {
         devShells.default = pkgs.mkShell {
           packages = with pkgs;
@@ -86,7 +94,7 @@
               cargo-edit
               sea-orm-cli
 
-              postgresql
+              postgresql_17_jit
             ]
             ++ shellScripts;
 

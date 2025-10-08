@@ -66,7 +66,7 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn new(postgres_url: &str) -> Self {
+    pub async fn new(postgres_url: &str) -> Result<Self, BotError> {
         let mut opt = ConnectOptions::new(postgres_url);
         opt.sqlx_slow_statements_logging_settings(
             tracing::log::LevelFilter::Warn,
@@ -80,13 +80,13 @@ impl Database {
 
         let sea = sea_orm::Database::connect(opt)
             .await
-            .expect("Failed to create SeaORM connection");
+            .map_err(|_| BotError::new("Failed to create SeaORM connection"))?;
 
         Migrator::up(&sea, None)
             .await
-            .expect("Failed to migrate database");
+            .map_err(|_| BotError::new("Failed to migrate database"))?;
 
-        Self { sea }
+        Ok(Self { sea })
     }
 
     pub async fn get_or_create_guild_config(

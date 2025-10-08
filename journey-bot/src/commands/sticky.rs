@@ -8,7 +8,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
 };
 use tokio::sync::{Mutex, RwLock, RwLockReadGuard};
-use tracing::{info, warn};
+use tracing::warn;
 
 use crate::{
     Context, Error,
@@ -24,20 +24,19 @@ pub struct StickyLock {
 }
 
 impl StickyLock {
-    pub async fn new(db: &Database) -> Self {
+    pub async fn new(db: &Database) -> Result<Self, BotError> {
         let mut locks = HashMap::new();
 
         for model in sea_entity::sticky_message::Entity::find()
             .all(&db.sea)
-            .await
-            .expect("Failed to get sticky messages")
+            .await?
         {
             locks.insert(model.id, Mutex::new(()));
         }
 
-        Self {
+        Ok(Self {
             locks: RwLock::new(locks),
-        }
+        })
     }
 
     pub async fn add(&self, id: String) {
@@ -165,13 +164,6 @@ async fn set(
 
     ctx.say("Sticky message added.").await?;
 
-    info!(
-        "Sticky message created in channel {} by {} ({})",
-        ctx.channel_id().get(),
-        ctx.author().name,
-        ctx.author().id
-    );
-
     guild_log(
         ctx.data().clone(),
         guild_id,
@@ -220,13 +212,6 @@ async fn remove(
 
     ctx.say("Sticky message removed.").await?;
 
-    info!(
-        "Sticky message {} removed in channel {} by {} ({})",
-        id,
-        ctx.channel_id().get(),
-        ctx.author().name,
-        ctx.author().id
-    );
     guild_log(
         ctx.data().clone(),
         guild_id,

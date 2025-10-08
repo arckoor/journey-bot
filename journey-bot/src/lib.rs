@@ -9,9 +9,12 @@ pub mod views;
 use std::sync::Arc;
 
 use config::JourneyBotConfig;
-use poise::serenity_prelude::{self as serenity};
+use poise::{
+    CreateReply,
+    serenity_prelude::{self as serenity},
+};
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     commands::{
@@ -62,6 +65,30 @@ pub async fn launch(config: JourneyBotConfig) -> Result<(), serenity::Error> {
                     );
                 })
             },
+            on_error: |error| {
+                Box::pin(async move {
+                    match error {
+                        poise::FrameworkError::Setup {
+                            error, framework, ..
+                        } => {
+                            framework.shard_manager().shutdown_all().await;
+                            panic!("{}", error);
+                        }
+                        poise::FrameworkError::Command { error, ctx, .. } => {
+                            let error = error.to_string();
+                            warn!("An error occurred in a command: {}", error);
+                            let _ = ctx
+                                .send(CreateReply::default().content(error).ephemeral(true))
+                                .await;
+                            return;
+                        }
+                        _ => {}
+                    }
+                    if let Err(e) = poise::builtins::on_error(error).await {
+                        tracing::error!("Error while handling error: {}", e);
+                    }
+                })
+            },
             event_handler: |ctx, event, _framework, store| {
                 Box::pin(async move { event_handler(ctx, event, store.clone()).await })
             },
@@ -71,7 +98,7 @@ pub async fn launch(config: JourneyBotConfig) -> Result<(), serenity::Error> {
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 let (tx, rx) = mpsc::channel(100);
-                let store = Arc::new(Store::new(store, ctx.http.clone(), tx).await);
+                let store = Arc::new(Store::new(store, ctx.http.clone(), tx).await?);
                 #[cfg(debug_assertions)]
                 {
                     use poise::serenity_prelude::GuildId;
@@ -90,8 +117,8 @@ pub async fn launch(config: JourneyBotConfig) -> Result<(), serenity::Error> {
                     serenity::Command::set_global_commands(ctx, vec![]).await?;
                     poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 }
-                RedditScheduler::schedule_all(store.clone()).await;
-                TwitchScheduler::schedule_all(store.clone()).await;
+                RedditScheduler::schedule_all(store.clone()).await?;
+                TwitchScheduler::schedule_all(store.clone()).await?;
                 PoolManager::schedule(store.clone(), rx);
                 CensorScheduler::schedule_all(store.clone()).await;
                 Ok(store)
