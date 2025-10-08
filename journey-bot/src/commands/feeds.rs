@@ -26,14 +26,14 @@ use crate::{
 pub struct RedditScheduler;
 
 impl RedditScheduler {
-    pub async fn schedule_all(store: Arc<Store>) {
+    pub async fn schedule_all(store: Arc<Store>) -> Result<(), BotError> {
         for feed in sea_entity::reddit_feed::Entity::find()
             .all(&store.db.sea)
-            .await
-            .expect("Failed to fetch feeds")
+            .await?
         {
             Self::schedule(feed.id, store.clone());
         }
+        Ok(())
     }
 
     pub fn schedule(id: String, store: Arc<Store>) {
@@ -261,18 +261,6 @@ async fn reddit(
 
     RedditScheduler::schedule(feed.id.clone(), ctx.data().clone());
 
-    info!(
-        "A feed for r/{} ({}) was added to channel {} ({}) by {} ({})",
-        subreddit_name,
-        feed.id,
-        ctx.channel_id()
-            .name(&ctx)
-            .await
-            .unwrap_or("<#Unknown>".to_string()),
-        ctx.channel_id().get(),
-        ctx.author().name,
-        ctx.author().id
-    );
     guild_log(
         ctx.data().clone(),
         guild_id,
@@ -381,15 +369,6 @@ async fn remove(
 
     let channel = ChannelId::new(feed.channel_id as u64);
 
-    let log_msg = format!(
-        "A feed for r/{} ({}) was removed from channel {} ({}) by {} ({})",
-        feed.subreddit,
-        feed.id,
-        channel.name(&ctx).await.unwrap_or("<#Unknown>".to_string()),
-        channel.get(),
-        ctx.author().name,
-        ctx.author().id
-    );
     let guild_log_msg = format!(
         "A feed for r/{} (`{}`) was removed from {} by {} (`{}`)",
         feed.subreddit,
@@ -402,7 +381,7 @@ async fn remove(
     feed.into_active_model().delete(&ctx.data().db.sea).await?;
 
     ctx.say("Feed removed.").await?;
-    info!(log_msg);
+
     guild_log(
         ctx.data().clone(),
         guild_id,

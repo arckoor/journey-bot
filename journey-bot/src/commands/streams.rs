@@ -103,11 +103,10 @@ impl TwitchClient {
 pub struct TwitchScheduler;
 
 impl TwitchScheduler {
-    pub async fn schedule_all(store: Arc<Store>) {
+    pub async fn schedule_all(store: Arc<Store>) -> Result<(), BotError> {
         for stream in sea_entity::stream_observer::Entity::find()
             .all(&store.db.sea)
-            .await
-            .expect("Failed to fetch stream observers")
+            .await?
         {
             Self::schedule(stream.id, store.clone());
         }
@@ -125,6 +124,7 @@ impl TwitchScheduler {
             Duration::from_secs(60 * 60 * 2),
             Self::expire_old_posted_streams,
         );
+        Ok(())
     }
 
     pub fn schedule(id: String, store: Arc<Store>) {
@@ -144,6 +144,7 @@ impl TwitchScheduler {
         };
 
         for observer in observers {
+            info!("Updating auto blacklist for observer {}", observer.id);
             if let Some(sheet_id) = observer.auto_blacklist_sheet_id.clone()
                 && let Some(column_name) = observer.auto_blacklist_column_name.clone()
             {
@@ -223,6 +224,10 @@ impl TwitchScheduler {
             let observer_id = observer.id.clone();
             let guild_id = GuildId::new(observer.guild_id as u64);
             let channel_id = ChannelId::new(observer.channel_id as u64);
+            info!(
+                "Committing new blacklist items for observer {}",
+                observer_id
+            );
 
             let Ok(committed) = store
                 .db
@@ -329,7 +334,7 @@ impl TwitchScheduler {
     }
 
     async fn watch_game(id: String, store: Arc<Store>) {
-        info!("Starting stream observer for stream {}", id);
+        info!("Starting observer for stream {}", id);
 
         async fn query_stream<'a>(
             store: Arc<Store>,
@@ -969,20 +974,6 @@ async fn add(
 
     TwitchScheduler::schedule(observer.id.clone(), ctx.data().clone());
 
-    info!(
-        "A stream observer {} ({} - {}) was added to channel {} ({}) by {} ({})",
-        observer.id,
-        observer.game_id,
-        observer.game_name,
-        ctx.channel_id()
-            .name(&ctx)
-            .await
-            .unwrap_or("<#Unknown>".to_string()),
-        ctx.channel_id().get(),
-        ctx.author().name,
-        ctx.author().id
-    );
-
     guild_log(
         ctx.data().clone(),
         guild_id,
@@ -1087,19 +1078,6 @@ async fn remove(
         return Ok(());
     };
 
-    let log_msg = format!(
-        "A stream observer {} ({} - {}) was removed from channel {} ({}) by {} ({})",
-        observer.id,
-        observer.game_id,
-        observer.game_name,
-        ctx.channel_id()
-            .name(&ctx)
-            .await
-            .unwrap_or("<#Unknown>".to_string()),
-        ctx.channel_id().get(),
-        ctx.author().name,
-        ctx.author().id
-    );
     let guild_log_msg = format!(
         "A stream observer `{}` (`{}` - `{}`) was removed from {} (`{}`) by {} (`{}`)",
         observer.id,
@@ -1117,7 +1095,7 @@ async fn remove(
         .await?;
 
     ctx.say("Stream observer removed.").await?;
-    info!(log_msg);
+
     guild_log(
         ctx.data().clone(),
         guild_id,
@@ -1192,13 +1170,7 @@ async fn blacklist_add(
         ))
         .await?;
     }
-    info!(
-        "User {} was blacklisted from observer {} by {} ({})",
-        user_login,
-        observer_id,
-        ctx.author().name,
-        ctx.author().id
-    );
+
     guild_log(
         ctx.data().clone(),
         guild_id,
@@ -1213,6 +1185,7 @@ async fn blacklist_add(
         None,
     )
     .await;
+
     TwitchScheduler::delete_posted_streams(
         ctx.data().clone(),
         &observer_id,
@@ -1263,14 +1236,6 @@ async fn blacklist_remove(
         .filter(|user| *user != user_login)
         .collect();
 
-    let log_msg = format!(
-        "User {} was removed from the blacklist for observer {} by {} ({})",
-        user_login,
-        observer.id,
-        ctx.author().name,
-        ctx.author().id,
-    );
-
     let guild_log_msg = format!(
         "User `{}` was removed from the blacklist for observer `{}` by {} (`{}`)",
         user_login,
@@ -1286,7 +1251,6 @@ async fn blacklist_remove(
     ctx.say(format!("User `{}` removed from blacklist.", user_login))
         .await?;
 
-    info!(log_msg);
     guild_log(
         ctx.data().clone(),
         guild_id,
@@ -1350,6 +1314,8 @@ async fn blacklist_sheet_set(
     observer.auto_blacklist_column_name = Set(Some(blacklist_sheet_column_name));
     observer.update(&ctx.data().db.sea).await?;
 
+    ctx.say("Blacklist sheet added.").await?;
+
     guild_log(
         ctx.data().clone(),
         guild_id,
@@ -1359,7 +1325,7 @@ async fn blacklist_sheet_set(
     )
     .await;
 
-    ctx.say("Blacklist sheet added.").await?;
+    TwitchScheduler::update_auto_blacklists(ctx.data().clone()).await;
 
     Ok(())
 }

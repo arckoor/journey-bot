@@ -20,19 +20,20 @@ pub struct Links {
 }
 
 impl Links {
-    pub async fn new() -> Self {
+    pub async fn new() -> Result<Self, BotError> {
         let path = PathBuf::from("./links.json");
         let data = tokio::fs::read_to_string(&path)
             .await
-            .expect("Failed to read links file");
-        let map = serde_json::from_str(&data).expect("Failed to deserialize links file");
+            .map_err(|_| BotError::new("Failed to read links file"))?;
+        let map = serde_json::from_str(&data)
+            .map_err(|_| BotError::new("Failed to deserialize links file"))?;
 
         let reverse_map = Self::map_to_reverse_map(&map);
-        Self {
+        Ok(Self {
             map: RwLock::new(map),
             rev_map: RwLock::new(reverse_map),
             path,
-        }
+        })
     }
 
     pub async fn get(&'_ self) -> Option<RwLockReadGuard<'_, LinkData>> {

@@ -37,7 +37,7 @@ jobs:
       - uses: cachix/cachix-action@v16
         with:
           name: arckoor-cache
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - run: nix build
       - run: docker image load < result
 

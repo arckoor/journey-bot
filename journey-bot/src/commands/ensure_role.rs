@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc};
 use poise::{
     CreateReply,
     serenity_prelude::{
-        self as serenity, GuildMemberFlags, GuildMemberUpdateEvent, Http, Member, Mentionable,
-        Role, RoleId,
+        self as serenity, CreateAttachment, GuildMemberFlags, GuildMemberUpdateEvent, Http, Member,
+        Mentionable, Role, RoleId,
     },
 };
 use sea_orm::{
@@ -127,7 +127,11 @@ async fn remove(
 
 /// Sweep all members for ensured roles.
 #[poise::command(slash_command)]
-async fn sweep(ctx: Context<'_>) -> Result<(), Error> {
+async fn sweep(
+    ctx: Context<'_>,
+    #[description = "Whether to do a dry-sweep, that is list eligible members but not add an roles to them."]
+    dry: Option<bool>,
+) -> Result<(), Error> {
     let guild = ctx
         .partial_guild()
         .await
@@ -142,6 +146,7 @@ async fn sweep(ctx: Context<'_>) -> Result<(), Error> {
         return Ok(());
     }
 
+    let dry = dry.unwrap_or(false);
     let guild_config = get_config::<sea_entity::guild_config::Entity>(ctx).await?;
     ctx.defer().await?;
     let guild_roles = &guild.roles;
@@ -151,6 +156,8 @@ async fn sweep(ctx: Context<'_>) -> Result<(), Error> {
 
     let mut more = true;
     let mut last = None;
+
+    let mut would_add = Vec::new();
 
     while more {
         more = false;
@@ -162,17 +169,36 @@ async fn sweep(ctx: Context<'_>) -> Result<(), Error> {
                 continue;
             }
             for ensured_role in ensured_roles.iter() {
-                if add_role_to_member(ctx, ensured_role, &member, guild_roles).await? {
+                if let Some(role_name) =
+                    add_role_to_member(ctx, ensured_role, &member, guild_roles, dry).await?
+                {
                     role_cnt += 1;
+                    if dry {
+                        would_add.push(format!(
+                            "{} ({}) -> {} ({})",
+                            member.user.name, member.user.id, role_name, ensured_role.role_id
+                        ));
+                    }
                 }
             }
         }
     }
 
-    ctx.say(format!(
-        "I looked at {member_cnt} members and added {role_cnt} roles."
-    ))
-    .await?;
+    if !dry {
+        ctx.say(format!(
+            "I looked at {member_cnt} members and added {role_cnt} roles."
+        ))
+        .await?;
+    } else {
+        let mut reply = CreateReply::default().content(format!(
+            "I looked at {member_cnt} members and would add {role_cnt} roles."
+        ));
+        if !would_add.is_empty() {
+            reply = reply.attachment(CreateAttachment::bytes(would_add.join("\n"), "roles.txt"));
+        }
+
+        ctx.send(reply).await?;
+    }
 
     Ok(())
 }
@@ -203,7 +229,7 @@ pub async fn on_member_update(
 
     let guild_roles = event.guild_id.roles(&ctx).await?;
     for ensured_role in ensured_roles {
-        add_role_to_member(ctx, &ensured_role, member, &guild_roles).await?;
+        add_role_to_member(ctx, &ensured_role, member, &guild_roles, false).await?;
     }
 
     Ok(())
@@ -220,17 +246,14 @@ fn member_is_valid_target(member: &Member, guild_config: &sea_entity::guild_conf
 
     // this just assumes onboarding is enabled
     // serenity doesn't expose that endpoint for whatever reason, and I can't be bothered to fork it
-    if !(member
+    if member
         .flags
-        .intersection(GuildMemberFlags::COMPLETED_ONBOARDING)
-        .bits()
-        == 1
-        || (ts.naive_utc().and_utc().timestamp() as f64) < guild_config.onboarding_active_since)
+        .contains(GuildMemberFlags::COMPLETED_ONBOARDING)
     {
-        info!("member not valid because of flags");
-        return false;
+        true
+    } else {
+        (ts.naive_utc().and_utc().timestamp() as f64) < guild_config.onboarding_active_since
     }
-    true
 }
 
 async fn add_role_to_member(
@@ -238,19 +261,22 @@ async fn add_role_to_member(
     ensured_role: &sea_entity::ensured_role::Model,
     member: &Member,
     guild_roles: &HashMap<RoleId, Role>,
-) -> Result<bool, Error> {
+    dry: bool,
+) -> Result<Option<String>, Error> {
     if let Some(guild_role) = guild_roles.get(&(ensured_role.role_id as u64).into())
         && !member.roles.contains(&guild_role.id)
     {
-        member.add_role(&ctx, guild_role.id).await?;
-        info!(
-            "{}",
-            format!(
-                "Added role {} to {} in {}.",
-                ensured_role.role_id, member.user.id, ensured_role.guild_id
-            )
-        );
-        return Ok(true);
+        if !dry {
+            member.add_role(&ctx, guild_role.id).await?;
+            info!(
+                "{}",
+                format!(
+                    "Added role {} to {} in {}.",
+                    ensured_role.role_id, member.user.id, ensured_role.guild_id
+                )
+            );
+        }
+        return Ok(Some(guild_role.name.clone()));
     }
-    Ok(false)
+    Ok(None)
 }

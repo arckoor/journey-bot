@@ -94,7 +94,7 @@
               cargo-edit
               sea-orm-cli
 
-              postgresql
+              postgresql_17_jit
             ]
             ++ shellScripts;
 
