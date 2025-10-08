@@ -1141,15 +1141,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fxhash"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
-dependencies = [
- "byteorder",
-]
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2227,7 +2218,7 @@ dependencies = [
  "parking_lot",
  "poise_macros",
  "regex",
- "serenity",
+ "serenity 0.12.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio",
  "tracing",
 ]
@@ -3173,6 +3164,12 @@ name = "serenity"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d72ec4323681bf9a3cabe40fd080abc2435859b502a1b5aa9bf693f125bfa76"
+replace = "serenity 0.12.4 (git+https://github.com/serenity-rs/serenity?rev=03c6681e27f6aa367ad8022609fbea1ff15f98a1)"
+
+[[package]]
+name = "serenity"
+version = "0.12.4"
+source = "git+https://github.com/serenity-rs/serenity?rev=03c6681e27f6aa367ad8022609fbea1ff15f98a1#03c6681e27f6aa367ad8022609fbea1ff15f98a1"
 dependencies = [
  "arrayvec",
  "async-trait",
@@ -3183,11 +3180,11 @@ dependencies = [
  "dashmap",
  "flate2",
  "futures",
- "fxhash",
  "mime_guess",
  "parking_lot",
  "percent-encoding",
  "reqwest 0.11.27",
+ "rustc-hash",
  "secrecy",
  "serde",
  "serde_cow",

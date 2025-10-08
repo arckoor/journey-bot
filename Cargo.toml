@@ -2,3 +2,6 @@
 [workspace]
 members = ["journey-bot", "sea-entity", "sea-migration"]
 resolver = "3"
+
+[replace]
+"serenity:0.12.4" = { git = "https://github.com/serenity-rs/serenity", rev = "03c6681e27f6aa367ad8022609fbea1ff15f98a1" }
