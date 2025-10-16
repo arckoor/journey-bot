@@ -20,21 +20,21 @@ poise = { version = "0.6.1", features = [
   "handle_panics",
 ], default-features = false }
 rapidfuzz = "0.5.0"
-regex = "1.11.3"
-reqwest = { version = "0.12.23", features = [
+regex = "1.12.2"
+reqwest = { version = "0.12.24", features = [
   "rustls-tls",
 ], default-features = false }
 roux = { version = "2.2.15", features = ["rustls"], default-features = false }
 sea-entity = { path = "../sea-entity" }
 sea-migration = { path = "../sea-migration" }
-sea-orm = { version = "1.1.16", features = [
+sea-orm = { version = "1.1.17", features = [
   "sqlx-postgres",
   "runtime-tokio-rustls",
   "macros",
 ] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
-tokio = "1.47.1"
+tokio = "1.48.0"
 tokio-retry2 = "0.6.0"
 tracing = "0.1.41"
 tracing-subscriber = "0.3.20"

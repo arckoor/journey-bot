@@ -19,7 +19,7 @@ use crate::{
     Context, Error,
     emoji::Emoji,
     store::Store,
-    utils::{BotError, LogError, eph, guild_log, send_message},
+    utils::{BotError, LogError, eph, guild_log, send_message, timestamp_from_f64_with_tz},
     views::embed::default_embed,
 };
 
@@ -60,7 +60,10 @@ impl RedditScheduler {
         ) -> Result<Vec<BasicThing<SubmissionData>>, RetryError<()>> {
             match subreddit.latest(25, None).await {
                 Ok(data) => Ok(data.data.children.into_iter().rev().collect()),
-                Err(_) => RetryError::to_transient(()),
+                Err(err) => {
+                    warn!("Got error from reddit api: {}", err);
+                    RetryError::to_transient(())
+                }
             }
         }
 
@@ -76,6 +79,13 @@ impl RedditScheduler {
                 .one(&store.db.sea)
                 .await
             else {
+                info!(
+                    "{}",
+                    format!(
+                        "Terminated observer for feed {} because it doesn't exist anymore",
+                        id
+                    )
+                );
                 break Ok(());
             };
 
@@ -178,10 +188,10 @@ async fn template_help(ctx: Context<'_>) -> Result<(), Error> {
 /// List all feeds in the server.
 #[poise::command(slash_command)]
 async fn list(ctx: Context<'_>) -> Result<(), Error> {
-    let guild_id: u64 = ctx.guild_id().ok_or("Expected to be in a guild")?.into();
+    let guild_id = ctx.guild_id().ok_or("Expected to be in a guild")?;
 
     let feeds = sea_entity::reddit_feed::Entity::find()
-        .filter(sea_entity::reddit_feed::Column::GuildId.eq(guild_id))
+        .filter(sea_entity::reddit_feed::Column::GuildId.eq(guild_id.get()))
         .all(&ctx.data().db.sea)
         .await?;
 
@@ -199,8 +209,13 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
             .name(ctx)
             .await
             .unwrap_or("Unknown".to_string());
+        let latest_post =
+            timestamp_from_f64_with_tz(feed.latest_post, ctx.data().clone(), guild_id).await;
         embed = embed.field(
-            format!("#{channel} | r/{} | ID: {}", feed.subreddit, feed.id),
+            format!(
+                "#{channel} | r/{} | ID: {} | LP: {}",
+                feed.subreddit, feed.id, latest_post
+            ),
             format!("`{}`", feed.template),
             false,
         );

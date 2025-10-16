@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{TimeDelta, Utc};
 use poise::{
     ChoiceParameter, CreateReply,
     serenity_prelude::{
@@ -29,7 +29,7 @@ use crate::{
     store::Store,
     utils::{
         BotError, LogError, censor_log, eph, guild_log, now, schedule_at_interval, send_message,
-        timestamp_now,
+        timestamp_from_f64, timestamp_now,
     },
     views::embed::default_embed,
 };
@@ -103,10 +103,7 @@ impl Display for Bucket {
             self.messages
                 .iter()
                 .map(|m| {
-                    let secs = m.timestamp.trunc() as i64;
-                    let nanos = (m.timestamp.fract() * 1e9) as u32;
-                    let datetime = DateTime::from_timestamp(secs, nanos).unwrap();
-                    let timestamp = datetime.format("%d/%m/%Y %H:%M:%S").to_string();
+                    let timestamp = timestamp_from_f64(m.timestamp);
                     format!("    {} | {} | {}", m.message_id, timestamp, m.content)
                 })
                 .collect::<Vec<_>>()
@@ -442,7 +439,7 @@ impl Pool {
     }
 
     async fn build_report(&self, bucket: &Bucket) -> CreateAttachment {
-        let timestamp = timestamp_now(chrono_tz::UTC);
+        let timestamp = timestamp_now(self.store.clone(), GuildId::new(self.guild_id)).await;
         let mut out = format!("recorded spam message at {timestamp}\n");
 
         for message in &bucket.messages {

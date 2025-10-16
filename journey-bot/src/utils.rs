@@ -5,7 +5,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use poise::{
     CreateReply,
@@ -75,6 +75,39 @@ pub fn now() -> Duration {
         .expect("Getting the time must work")
 }
 
+async fn get_guild_tz(store: Arc<Store>, guild_id: GuildId) -> Tz {
+    if let Ok(guild_config) =
+        get_config_from_id::<sea_entity::guild_config::Entity>(store.clone(), guild_id).await
+    {
+        guild_config.time_zone.parse().unwrap_or(chrono_tz::UTC)
+    } else {
+        chrono_tz::UTC
+    }
+}
+
+pub async fn timestamp_now(store: Arc<Store>, guild_id: GuildId) -> String {
+    let tz = get_guild_tz(store, guild_id).await;
+    let now = Utc::now().with_timezone(&tz);
+    now.format("%H:%M:%S").to_string()
+}
+
+fn extract_datetime(ts: f64) -> DateTime<Utc> {
+    let secs = ts.trunc() as i64;
+    let nanos = (ts.fract() * 1e9) as u32;
+    DateTime::from_timestamp(secs, nanos).unwrap()
+}
+
+pub async fn timestamp_from_f64_with_tz(ts: f64, store: Arc<Store>, guild_id: GuildId) -> String {
+    let datetime = extract_datetime(ts);
+    let datetime = datetime.with_timezone(&get_guild_tz(store, guild_id).await);
+    datetime.format("%d/%m/%Y %H:%M:%S").to_string()
+}
+
+pub fn timestamp_from_f64(ts: f64) -> String {
+    let datetime = extract_datetime(ts);
+    datetime.format("%d/%m/%Y %H:%M:%S").to_string()
+}
+
 pub fn create_activity(
     kind: ActivityType,
     message: &str,
@@ -98,11 +131,6 @@ pub async fn eph(ctx: Context<'_>, msg: impl Into<String>) -> Result<(), Error> 
     ctx.send(CreateReply::default().content(msg).ephemeral(true))
         .await?;
     Ok(())
-}
-
-pub fn timestamp_now(tz: Tz) -> String {
-    let now = Utc::now().with_timezone(&tz);
-    now.format("%H:%M:%S").to_string()
 }
 
 pub async fn guild_log(
@@ -169,14 +197,7 @@ async fn log_to(
     msg: impl Into<String> + std::fmt::Display,
     attachment: Option<CreateAttachment>,
 ) {
-    let Ok(guild_config) =
-        get_config_from_id::<sea_entity::guild_config::Entity>(store.clone(), guild_id).await
-    else {
-        return;
-    };
-
-    let tz = guild_config.time_zone.parse().unwrap_or(chrono_tz::UTC);
-    let timestamp = timestamp_now(tz);
+    let timestamp = timestamp_now(store.clone(), guild_id).await;
     let message = format!("[`{timestamp}`]  {} {msg}", store.emoji.get(category));
 
     let _ = send_message(store, channel_id, message, attachment).await;
@@ -197,7 +218,7 @@ pub async fn send_message(
 
     Ok(channel
         .guild()
-        .expect("Expected a guild channel")
+        .ok_or(BotError::new("Expected a guild channel"))?
         .send_message(&store.ctx, message)
         .await?)
 }
