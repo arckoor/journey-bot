@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use poise::serenity_prelude as serenity;
-use roux::{Me, Reddit};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
     commands::{
-        anti_spam::ChannelMessage, links::Links, sticky::StickyLock, streams::TwitchClient,
+        anti_spam::ChannelMessage, feeds::RedditClient, links::Links, sticky::StickyLock,
+        streams::TwitchClient,
     },
     config::StoreConfig,
     db::Database,
@@ -20,7 +20,7 @@ pub struct Store {
     pub db: Database,
     pub emoji: EmojiStore,
     pub links: Links,
-    pub reddit_client: Me,
+    pub reddit_client: RedditClient,
     pub twitch_client: TwitchClient,
     pub sticky: StickyLock,
     pub anti_spam_sender: Sender<ChannelMessage>,
@@ -38,16 +38,8 @@ impl Store {
         let emoji = EmojiStore::new(ctx.clone(), setup.admin_guild, emoji).await?;
         let links = Links::new().await?;
 
-        let reddit_client = Reddit::new(&api.reddit.user_agent, &api.reddit.id, &api.reddit.secret)
-            .username(&api.reddit.username)
-            .password(&api.reddit.password)
-            .login()
-            .await
-            .map_err(|_| BotError::new("Failed to open reddit client"))?;
-
-        let twitch_client = TwitchClient::new(api.twitch)
-            .await
-            .map_err(|_| BotError::new("Failed to open twitch client"))?;
+        let reddit_client = RedditClient::new(api.reddit).await?;
+        let twitch_client = TwitchClient::new(api.twitch).await?;
 
         let sticky = StickyLock::new(&db).await?;
 

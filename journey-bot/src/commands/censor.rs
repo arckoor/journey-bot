@@ -343,7 +343,7 @@ async fn sheet_set(
     #[rename = "censor-list-sheet-id"]
     censor_list_sheet_id: String,
     #[description = "The names of the sheet columns to update the censor list from, comma separated."]
-    #[rename = "censor-list-column_names"]
+    #[rename = "censor-list-column-names"]
     censor_list_sheet_column_names: String,
 ) -> Result<(), Error> {
     ctx.defer().await?;

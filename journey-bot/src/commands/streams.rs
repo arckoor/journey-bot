@@ -76,6 +76,7 @@ impl TwitchClient {
             drop(token);
             let mut token = self.token.write().await;
             if token.is_elapsed() {
+                info!("Rotating twitch access token");
                 token
                     .refresh_token(&self.client)
                     .await

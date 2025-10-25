@@ -4,4 +4,4 @@ members = ["journey-bot", "sea-entity", "sea-migration"]
 resolver = "3"
 
 [replace]
-"serenity:0.12.4" = { git = "https://github.com/serenity-rs/serenity", rev = "03c6681e27f6aa367ad8022609fbea1ff15f98a1" }
+"serenity:0.12.4" = { git = "https://github.com/serenity-rs/serenity", rev = "b5ec750bd18b18592ad15d83bb6f9a4a9b6342da" }

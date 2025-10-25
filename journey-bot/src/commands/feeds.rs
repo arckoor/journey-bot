@@ -8,20 +8,71 @@ use poise::{
     },
 };
 use regex::Regex;
-use roux::{Subreddit, response::BasicThing, submission::SubmissionData};
+use roux::{Me, Reddit, Subreddit, response::BasicThing, submission::SubmissionData};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
 };
+use serde::Deserialize;
+use tokio::sync::RwLock;
 use tokio_retry2::{Retry, RetryError, strategy::ExponentialFactorBackoff};
 use tracing::{info, warn};
 
 use crate::{
     Context, Error,
+    config::RedditConfig,
     emoji::Emoji,
     store::Store,
-    utils::{BotError, LogError, eph, guild_log, send_message, timestamp_from_f64_with_tz},
+    utils::{BotError, LogError, eph, guild_log, now, send_message, timestamp_from_f64_with_tz},
     views::embed::default_embed,
 };
+
+#[derive(Clone, Debug, Deserialize)]
+struct RedditToken {
+    exp: f32,
+}
+
+pub struct RedditClient {
+    client: RwLock<Me>,
+    config: RedditConfig,
+}
+
+impl RedditClient {
+    pub async fn new(config: RedditConfig) -> Result<Self, BotError> {
+        let client = Self::make_client(&config).await?;
+
+        Ok(Self {
+            client: RwLock::new(client),
+            config,
+        })
+    }
+
+    async fn make_client(config: &RedditConfig) -> Result<Me, BotError> {
+        Reddit::new(&config.user_agent, &config.id, &config.secret)
+            .username(&config.username)
+            .password(&config.password)
+            .login()
+            .await
+            .map_err(|_| BotError::new("Failed to open reddit client"))
+    }
+
+    async fn get_client(&self) -> Result<Me, BotError> {
+        let client = self.client.read().await;
+        let token = client.config.access_token.clone().unwrap_or(String::new());
+        let expiry = jsonwebtoken::dangerous::insecure_decode::<RedditToken>(token)
+            .map(|t| t.claims.exp)
+            .unwrap_or(0.0);
+        let now = now().as_secs_f32();
+        if expiry <= (now - 60.0) {
+            info!("Rotating reddit access token");
+            drop(client);
+            let mut client = self.client.write().await;
+            *client = Self::make_client(&self.config).await?;
+            Ok(client.clone())
+        } else {
+            Ok(client.clone())
+        }
+    }
+}
 
 pub struct RedditScheduler;
 
@@ -53,11 +104,18 @@ impl RedditScheduler {
             .await?
             .ok_or(BotError::new("Feed not found"))?;
         let mut latest_time = feed.latest_post;
-        let subreddit = Subreddit::new_oauth(&feed.subreddit, &store.reddit_client.client);
 
         async fn query_subreddit(
-            subreddit: &Subreddit,
+            store: Arc<Store>,
+            subreddit: &str,
         ) -> Result<Vec<BasicThing<SubmissionData>>, RetryError<()>> {
+            let client = store
+                .reddit_client
+                .get_client()
+                .await
+                .map_err(|_| RetryError::to_transient::<()>(()).unwrap_err())?;
+            let subreddit = Subreddit::new_oauth(subreddit, &client.client);
+
             match subreddit.latest(25, None).await {
                 Ok(data) => Ok(data.data.children.into_iter().rev().collect()),
                 Err(err) => {
@@ -89,9 +147,11 @@ impl RedditScheduler {
                 break Ok(());
             };
 
-            let submissions = Retry::spawn(retry_strategy.clone(), || query_subreddit(&subreddit))
-                .await
-                .unwrap();
+            let submissions = Retry::spawn(retry_strategy.clone(), || {
+                query_subreddit(store.clone(), &feed.subreddit)
+            })
+            .await
+            .unwrap();
 
             for submission in submissions {
                 if submission.data.created_utc > latest_time {
@@ -250,11 +310,14 @@ async fn reddit(
         return Ok(());
     }
 
+    ctx.defer().await?;
+
     let template = template
         .unwrap_or("{{title}}\n{{link}}".to_string())
         .replace("\\n", "\n");
 
-    let subreddit = Subreddit::new_oauth(&subreddit_name, &ctx.data().reddit_client.client);
+    let client = ctx.data().reddit_client.get_client().await?;
+    let subreddit = Subreddit::new_oauth(&subreddit_name, &client.client);
     let Ok(_) = subreddit.about().await else {
         eph(ctx, "Subreddit not found.").await?;
         return Ok(());
