@@ -1,22 +1,20 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use poise::{
     CreateReply,
     serenity_prelude::{
-        self as serenity, CreateAttachment, GuildMemberFlags, GuildMemberUpdateEvent, Http, Member,
-        Mentionable, Role, RoleId,
+        self as serenity, CreateAttachment, GuildMemberUpdateEvent, Member, Mentionable,
     },
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
 };
-use tracing::info;
 
 use crate::{
     Context, Error,
     db::{get_config, get_config_from_id},
     store::Store,
-    utils::eph,
+    utils::{add_roles_to_member, eph, member_is_valid_target},
     views::embed::default_embed,
 };
 
@@ -24,7 +22,7 @@ use crate::{
     slash_command,
     subcommands("list", "add", "remove", "sweep"),
     guild_only,
-    required_permissions = "MANAGE_GUILD",
+    default_member_permissions = "MANAGE_GUILD",
     required_bot_permissions = "MANAGE_ROLES",
     rename = "ensure-role"
 )]
@@ -129,17 +127,21 @@ async fn remove(
 #[poise::command(slash_command)]
 async fn sweep(
     ctx: Context<'_>,
-    #[description = "Whether to do a dry-sweep, that is list eligible members but not add an roles to them."]
+    #[description = "Whether to do a dry-sweep, that is list affected members but not add any roles to them."]
     dry: Option<bool>,
 ) -> Result<(), Error> {
     let guild = ctx
         .partial_guild()
         .await
         .ok_or("Expected to be in a guild")?;
+    let guild_id = guild.id.get();
     let ensured_roles = sea_entity::ensured_role::Entity::find()
-        .filter(sea_entity::ensured_role::Column::GuildId.eq(guild.id.get()))
+        .filter(sea_entity::ensured_role::Column::GuildId.eq(guild_id))
         .all(&ctx.data().db.sea)
-        .await?;
+        .await?
+        .into_iter()
+        .map(|m| m.role_id as u64)
+        .collect::<Vec<_>>();
 
     if ensured_roles.is_empty() {
         eph(ctx, "No roles ensured.").await?;
@@ -168,15 +170,16 @@ async fn sweep(
             if !member_is_valid_target(&member, &guild_config) {
                 continue;
             }
-            for ensured_role in ensured_roles.iter() {
-                if let Some(role_name) =
-                    add_role_to_member(ctx, ensured_role, &member, guild_roles, dry).await?
-                {
-                    role_cnt += 1;
-                    if dry {
+            let added_roles =
+                add_roles_to_member(ctx, &ensured_roles, &member, guild_roles, guild_id, dry)
+                    .await?;
+            if !added_roles.is_empty() {
+                role_cnt += added_roles.len();
+                if dry {
+                    for (id, name) in added_roles {
                         would_add.push(format!(
                             "{} ({}) -> {} ({})",
-                            member.user.name, member.user.id, role_name, ensured_role.role_id
+                            member.user.name, member.user.id, name, id
                         ));
                     }
                 }
@@ -209,74 +212,38 @@ pub async fn on_member_update(
     new: &Option<Member>,
     event: &GuildMemberUpdateEvent,
 ) -> Result<(), Error> {
-    let ensured_roles = sea_entity::ensured_role::Entity::find()
-        .filter(sea_entity::ensured_role::Column::GuildId.eq(event.guild_id.get()))
-        .all(&store.db.sea)
-        .await?;
-
-    if ensured_roles.is_empty() {
-        return Ok(());
-    }
-
     let Some(member) = new else { return Ok(()) };
 
     let guild_config =
-        get_config_from_id::<sea_entity::guild_config::Entity>(store, member.guild_id).await?;
+        get_config_from_id::<sea_entity::guild_config::Entity>(store.clone(), member.guild_id)
+            .await?;
 
     if !member_is_valid_target(member, &guild_config) {
         return Ok(());
     }
 
-    let guild_roles = event.guild_id.roles(&ctx).await?;
-    for ensured_role in ensured_roles {
-        add_role_to_member(ctx, &ensured_role, member, &guild_roles, false).await?;
+    let ensured_roles = sea_entity::ensured_role::Entity::find()
+        .filter(sea_entity::ensured_role::Column::GuildId.eq(event.guild_id.get()))
+        .all(&store.db.sea)
+        .await?
+        .into_iter()
+        .map(|m| m.role_id as u64)
+        .collect::<Vec<_>>();
+
+    if ensured_roles.is_empty() {
+        return Ok(());
     }
+
+    let guild_roles = event.guild_id.roles(&ctx).await?;
+    add_roles_to_member(
+        ctx,
+        &ensured_roles,
+        member,
+        &guild_roles,
+        event.guild_id.get(),
+        false,
+    )
+    .await?;
 
     Ok(())
-}
-
-fn member_is_valid_target(member: &Member, guild_config: &sea_entity::guild_config::Model) -> bool {
-    if member.user.bot {
-        return false;
-    }
-
-    let Some(ts) = member.joined_at else {
-        return false;
-    };
-
-    // this just assumes onboarding is enabled
-    // serenity doesn't expose that endpoint for whatever reason, and I can't be bothered to fork it
-    if member
-        .flags
-        .contains(GuildMemberFlags::COMPLETED_ONBOARDING)
-    {
-        true
-    } else {
-        (ts.naive_utc().and_utc().timestamp() as f64) < guild_config.onboarding_active_since
-    }
-}
-
-async fn add_role_to_member(
-    ctx: impl AsRef<Http>,
-    ensured_role: &sea_entity::ensured_role::Model,
-    member: &Member,
-    guild_roles: &HashMap<RoleId, Role>,
-    dry: bool,
-) -> Result<Option<String>, Error> {
-    if let Some(guild_role) = guild_roles.get(&(ensured_role.role_id as u64).into())
-        && !member.roles.contains(&guild_role.id)
-    {
-        if !dry {
-            member.add_role(&ctx, guild_role.id).await?;
-            info!(
-                "{}",
-                format!(
-                    "Added role {} to {} in {}.",
-                    ensured_role.role_id, member.user.id, ensured_role.guild_id
-                )
-            );
-        }
-        return Ok(Some(guild_role.name.clone()));
-    }
-    Ok(None)
 }

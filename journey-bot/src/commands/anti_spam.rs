@@ -680,7 +680,7 @@ impl From<Punishment> for PunishmentChoice {
     slash_command,
     subcommands("help", "show", "punishment", "disable", "punished_messages", "pool"),
     guild_only,
-    required_permissions = "MANAGE_GUILD",
+    default_member_permissions = "MANAGE_GUILD",
     required_bot_permissions = "
         ATTACH_FILES |
         BAN_MEMBERS |

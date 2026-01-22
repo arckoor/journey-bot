@@ -730,7 +730,7 @@ impl TwitchScheduler {
         "blacklist_sheet_remove"
     ),
     guild_only,
-    required_permissions = "BAN_MEMBERS",
+    default_member_permissions = "BAN_MEMBERS",
     required_bot_permissions = "SEND_MESSAGES",
     rename = "stream-observer"
 )]

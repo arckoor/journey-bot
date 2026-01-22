@@ -159,6 +159,9 @@ async fn event_handler(
             commands::ensure_role::on_member_update(store.clone(), ctx, new, event)
                 .await
                 .log("commands::ensure_role::on_member_update");
+            commands::auto_role::on_member_update(store.clone(), ctx, new, event)
+                .await
+                .log("commands::auto_role::on_member_update");
         }
         serenity::FullEvent::Message { new_message } => {
             commands::anti_spam::on_message(store.clone(), new_message)

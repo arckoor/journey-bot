@@ -11,12 +11,12 @@ use poise::{
     CreateReply,
     serenity_prelude::{
         self as serenity, ActivityData, ActivityType, ChannelId, CreateAttachment, CreateMessage,
-        GuildId, Message,
+        GuildId, GuildMemberFlags, Http, Member, Message, Role, RoleId,
     },
 };
 use roux::util::RouxError;
 use sea_orm::{DbErr, SqlErr};
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{Context, Error, db::get_config_from_id, emoji::Emoji, store::Store};
 
@@ -221,6 +221,119 @@ pub async fn send_message(
         .ok_or(BotError::new("Expected a guild channel"))?
         .send_message(&store.ctx, message)
         .await?)
+}
+
+pub fn member_is_valid_target(
+    member: &Member,
+    guild_config: &sea_entity::guild_config::Model,
+) -> bool {
+    if member.user.bot {
+        return false;
+    }
+
+    let Some(ts) = member.joined_at else {
+        return false;
+    };
+
+    // this just assumes onboarding is enabled
+    // serenity doesn't expose that endpoint for whatever reason, and I can't be bothered to fork it
+    if member
+        .flags
+        .contains(GuildMemberFlags::COMPLETED_ONBOARDING)
+    {
+        true
+    } else {
+        (ts.naive_utc().and_utc().timestamp() as f64) < guild_config.onboarding_active_since
+    }
+}
+
+fn filter_roles(
+    roles: &[u64],
+    guild_roles: &HashMap<RoleId, Role>,
+    predicate: &impl Fn(&(RoleId, (u64, String))) -> bool,
+) -> (Vec<RoleId>, Vec<(u64, String)>) {
+    let (role_ids, role_names) = roles
+        .iter()
+        .map(|role| {
+            guild_roles
+                .get(&(*role).into())
+                .map(|r| (r.id, (r.id.get(), r.name.clone())))
+        })
+        .filter(|opt| opt.as_ref().is_some_and(predicate))
+        .flatten()
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+
+    (role_ids, role_names)
+}
+
+pub async fn add_roles_to_member(
+    ctx: impl AsRef<Http>,
+    roles: &[u64],
+    member: &Member,
+    guild_roles: &HashMap<RoleId, Role>,
+    guild_id: u64,
+    dry: bool,
+) -> Result<Vec<(u64, String)>, Error> {
+    let (role_ids, role_names) =
+        filter_roles(roles, guild_roles, &|r: &(RoleId, (u64, String))| {
+            !member.roles.contains(&r.0)
+        });
+
+    if !role_ids.is_empty() {
+        if !dry {
+            member.add_roles(&ctx, &role_ids).await?;
+            info!(
+                "{}",
+                format!(
+                    "Added roles {} to {} in {}.",
+                    role_ids
+                        .into_iter()
+                        .map(|r| r.get().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    member.user.id,
+                    guild_id
+                )
+            );
+        }
+        return Ok(role_names);
+    }
+    Ok(vec![])
+}
+
+pub async fn remove_roles_from_member(
+    ctx: impl AsRef<Http>,
+    roles: &[u64],
+    member: &Member,
+    guild_roles: &HashMap<RoleId, Role>,
+    guild_id: u64,
+    dry: bool,
+) -> Result<Vec<(u64, String)>, Error> {
+    let (role_ids, role_names) =
+        filter_roles(roles, guild_roles, &|r: &(RoleId, (u64, String))| {
+            member.roles.contains(&r.0)
+        });
+
+    if !role_ids.is_empty() {
+        if !dry {
+            member.remove_roles(&ctx, &role_ids).await?;
+            info!(
+                "{}",
+                format!(
+                    "Remove roles {} from {} in {}.",
+                    role_ids
+                        .into_iter()
+                        .map(|r| r.get().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    member.user.id,
+                    guild_id
+                )
+            );
+        }
+        return Ok(role_names);
+    }
+    Ok(vec![])
 }
 
 pub async fn fetch_sheet(id: &str) -> Result<csv::Reader<Cursor<Vec<u8>>>, BotError> {

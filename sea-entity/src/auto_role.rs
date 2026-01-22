@@ -2,18 +2,14 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "reddit_feed")]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
+#[sea_orm(table_name = "auto_role")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub guild_id: i64,
-    pub channel_id: i64,
-    pub subreddit: String,
-    #[sea_orm(column_type = "Text")]
-    pub template: String,
-    #[sea_orm(column_type = "Double")]
-    pub latest_post: f64,
+    pub required: Vec<i64>,
+    pub granted: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

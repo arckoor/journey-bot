@@ -48,7 +48,7 @@ pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
 #[poise::command(
     slash_command,
     guild_only,
-    required_permissions = "SEND_MESSAGES",
+    required_bot_permissions = "SEND_MESSAGES",
     default_member_permissions = "BAN_MEMBERS"
 )]
 pub async fn echo(

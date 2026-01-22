@@ -4,6 +4,7 @@ use binary_heap_plus::BinaryHeap;
 use poise::serenity_prelude::futures::{self, Stream};
 use regex::Regex;
 use tokio::sync::{RwLock, RwLockReadGuard};
+use tracing::info;
 
 use crate::{
     Context, Error,
@@ -29,6 +30,7 @@ impl Links {
             .map_err(|_| BotError::new("Failed to deserialize links file"))?;
 
         let reverse_map = Self::map_to_reverse_map(&map);
+        info!("Loaded links file with {} entries", reverse_map.len());
         Ok(Self {
             map: RwLock::new(map),
             rev_map: RwLock::new(reverse_map),
@@ -171,11 +173,18 @@ async fn find(
     #[description = "The topic to find a link to."]
     #[autocomplete = "autocomplete_link"]
     topic: String,
+    #[description = "Whether to reply with an ephemeral message."] ephemeral: Option<bool>,
 ) -> Result<(), Error> {
     let rev_map = ctx.data().links.get_blocking().await;
+    let ephemeral = ephemeral.unwrap_or(false);
 
     if let Some(link) = rev_map.get(&topic) {
-        ctx.say(format!("<{link}>")).await?;
+        let msg = format!("<{link}>");
+        if ephemeral {
+            eph(ctx, msg).await?;
+        } else {
+            ctx.say(msg).await?;
+        }
     } else {
         eph(ctx, "I don't know that topic.").await?;
     }
@@ -213,7 +222,7 @@ async fn browse(ctx: Context<'_>) -> Result<(), Error> {
     subcommands("add", "remove"),
     rename = "link-config",
     guild_only,
-    required_permissions = "BAN_MEMBERS",
+    default_member_permissions = "BAN_MEMBERS",
     required_bot_permissions = "SEND_MESSAGES"
 )]
 pub async fn link_config(_: Context<'_>) -> Result<(), Error> {

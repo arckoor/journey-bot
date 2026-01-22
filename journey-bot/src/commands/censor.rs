@@ -146,7 +146,7 @@ impl CensorScheduler {
     slash_command,
     subcommands("show", "log_channel", "add", "remove", "sheet_set", "sheet_remove"),
     guild_only,
-    required_permissions = "MANAGE_GUILD",
+    default_member_permissions = "MANAGE_GUILD",
     required_bot_permissions = "MANAGE_MESSAGES | SEND_MESSAGES | VIEW_CHANNEL",
     rename = "censor-config"
 )]

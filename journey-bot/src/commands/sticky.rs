@@ -60,7 +60,7 @@ impl StickyLock {
     slash_command,
     subcommands("list", "set", "remove"),
     guild_only,
-    required_permissions = "BAN_MEMBERS",
+    default_member_permissions = "BAN_MEMBERS",
     required_bot_permissions = "SEND_MESSAGES"
 )]
 pub async fn stick(_: Context<'_>) -> Result<(), Error> {

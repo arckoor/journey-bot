@@ -212,7 +212,7 @@ impl RedditScheduler {
     slash_command,
     subcommands("template_help", "list", "add", "edit", "remove"),
     guild_only,
-    required_permissions = "BAN_MEMBERS",
+    default_member_permissions = "BAN_MEMBERS",
     required_bot_permissions = "SEND_MESSAGES"
 )]
 pub async fn feed(_: Context<'_>) -> Result<(), Error> {

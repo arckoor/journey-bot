@@ -29,7 +29,7 @@ use crate::{
         "trusted_roles"
     ),
     guild_only,
-    required_permissions = "MANAGE_GUILD",
+    default_member_permissions = "MANAGE_GUILD",
     required_bot_permissions = "ATTACH_FILES | SEND_MESSAGES | VIEW_CHANNEL",
     rename = "guild-config"
 )]
