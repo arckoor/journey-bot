@@ -11,7 +11,7 @@ use poise::{
     CreateReply,
     serenity_prelude::{
         self as serenity, ActivityData, ActivityType, ChannelId, CreateAttachment, CreateMessage,
-        GuildId, GuildMemberFlags, Http, Member, Message, Role, RoleId,
+        GuildId, Http, Member, Message, Role, RoleId,
     },
 };
 use roux::util::RouxError;
@@ -223,28 +223,8 @@ pub async fn send_message(
         .await?)
 }
 
-pub fn member_is_valid_target(
-    member: &Member,
-    guild_config: &sea_entity::guild_config::Model,
-) -> bool {
-    if member.user.bot {
-        return false;
-    }
-
-    let Some(ts) = member.joined_at else {
-        return false;
-    };
-
-    // this just assumes onboarding is enabled
-    // serenity doesn't expose that endpoint for whatever reason, and I can't be bothered to fork it
-    if member
-        .flags
-        .contains(GuildMemberFlags::COMPLETED_ONBOARDING)
-    {
-        true
-    } else {
-        (ts.naive_utc().and_utc().timestamp() as f64) < guild_config.onboarding_active_since
-    }
+pub fn member_is_valid_target(member: &Member) -> bool {
+    !member.user.bot
 }
 
 fn filter_roles(

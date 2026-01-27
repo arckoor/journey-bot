@@ -58,7 +58,7 @@ impl StickyLock {
 
 #[poise::command(
     slash_command,
-    subcommands("list", "set", "remove"),
+    subcommands("list", "fmt", "set", "remove"),
     guild_only,
     default_member_permissions = "BAN_MEMBERS",
     required_bot_permissions = "SEND_MESSAGES"
@@ -100,6 +100,25 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
     }
 
     ctx.send(CreateReply::default().embed(embed)).await?;
+
+    Ok(())
+}
+
+/// Format a message so that it can be used with /stick set.
+#[poise::command(slash_command, rename = "format")]
+async fn fmt(ctx: Context<'_>, id: MessageId) -> Result<(), Error> {
+    let Ok(msg) = ctx
+        .guild_channel()
+        .await
+        .ok_or("Expected to in a guild")?
+        .message(ctx, id)
+        .await
+    else {
+        eph(ctx, "Unable to find message").await?;
+        return Ok(());
+    };
+
+    ctx.say(msg.content.replace("\n", "\\n")).await?;
 
     Ok(())
 }

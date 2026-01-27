@@ -18,7 +18,6 @@ use sea_orm::{
 
 use crate::{
     Context, Error,
-    db::{get_config, get_config_from_id},
     emoji::Emoji,
     store::Store,
     utils::{
@@ -194,7 +193,6 @@ async fn sweep(
     }
 
     let dry = dry.unwrap_or(false);
-    let guild_config = get_config::<sea_entity::guild_config::Entity>(ctx).await?;
     ctx.defer().await?;
     let guild_roles = &guild.roles;
 
@@ -212,7 +210,7 @@ async fn sweep(
             more = true;
             last = Some(member.user.id);
             member_cnt += 1;
-            if !member_is_valid_target(&member, &guild_config) {
+            if !member_is_valid_target(&member) {
                 continue;
             }
 
@@ -271,11 +269,7 @@ pub async fn on_member_update(
 ) -> Result<(), Error> {
     let Some(member) = new else { return Ok(()) };
 
-    let guild_config =
-        get_config_from_id::<sea_entity::guild_config::Entity>(store.clone(), member.guild_id)
-            .await?;
-
-    if !member_is_valid_target(member, &guild_config) {
+    if !member_is_valid_target(member) {
         return Ok(());
     }
 
