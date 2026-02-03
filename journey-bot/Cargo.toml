@@ -15,7 +15,7 @@ chrono-tz = "0.10.4"
 config = { version = "0.15.19", features = ["toml"], default-features = false }
 csv = "1.4.0"
 cuid2 = "0.1.4"
-jsonwebtoken = { version = "10.2.0", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "10.3.0", features = ["aws_lc_rs"] }
 poise = { version = "0.6.1", features = [
   "default",
   "handle_panics",
