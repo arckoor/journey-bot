@@ -32,7 +32,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(DeriveIden)]
-enum AutoRole {
+pub enum AutoRole {
     Table,
     Id,
     GuildId,

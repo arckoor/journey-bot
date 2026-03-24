@@ -15,7 +15,7 @@ use sea_orm::{
 use serde::Deserialize;
 use tokio::sync::RwLock;
 use tokio_retry2::{Retry, RetryError, strategy::ExponentialFactorBackoff};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use crate::{
     Context, Error,
@@ -32,13 +32,13 @@ struct RedditToken {
 }
 
 pub struct RedditClient {
-    client: RwLock<Me>,
+    client: RwLock<Option<Me>>,
     config: RedditConfig,
 }
 
 impl RedditClient {
     pub async fn new(config: RedditConfig) -> Result<Self, BotError> {
-        let client = Self::make_client(&config).await?;
+        let client = Self::make_client(&config).await;
 
         Ok(Self {
             client: RwLock::new(client),
@@ -46,31 +46,41 @@ impl RedditClient {
         })
     }
 
-    async fn make_client(config: &RedditConfig) -> Result<Me, BotError> {
-        Reddit::new(&config.user_agent, &config.id, &config.secret)
+    async fn make_client(config: &RedditConfig) -> Option<Me> {
+        let client = Reddit::new(&config.user_agent, &config.id, &config.secret)
             .username(&config.username)
             .password(&config.password)
             .login()
-            .await
-            .map_err(|_| BotError::new("Failed to open reddit client"))
+            .await;
+
+        match client {
+            Ok(client) => Some(client),
+            Err(e) => {
+                error!("Failed to create reddit client: {e:?}");
+                None
+            }
+        }
     }
 
     async fn get_client(&self) -> Result<Me, BotError> {
         let client = self.client.read().await;
-        let token = client.config.access_token.clone().unwrap_or(String::new());
-        let expiry = jsonwebtoken::dangerous::insecure_decode::<RedditToken>(token)
-            .map(|t| t.claims.exp)
-            .unwrap_or(0.0);
-        let now = now().as_secs_f32();
-        if expiry <= (now - 60.0) {
-            info!("Rotating reddit access token");
-            drop(client);
-            let mut client = self.client.write().await;
-            *client = Self::make_client(&self.config).await?;
-            Ok(client.clone())
-        } else {
-            Ok(client.clone())
+        if let Some(client) = &*client {
+            let token = client.config.access_token.clone().unwrap_or(String::new());
+            let expiry = jsonwebtoken::dangerous::insecure_decode::<RedditToken>(token)
+                .map(|t| t.claims.exp)
+                .unwrap_or(0.0);
+            let now = now().as_secs_f32();
+            if expiry > (now - 60.0) {
+                return Ok(client.clone());
+            }
+            info!("Rotating reddit access token")
         }
+        drop(client);
+        let mut client = self.client.write().await;
+        *client = Self::make_client(&self.config).await;
+        client
+            .clone()
+            .ok_or(BotError::new("Failed to create reddit client"))
     }
 }
 

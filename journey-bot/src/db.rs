@@ -84,7 +84,7 @@ impl Database {
 
         Migrator::up(&sea, None)
             .await
-            .map_err(|_| BotError::new("Failed to migrate database"))?;
+            .map_err(|e| BotError::new(format!("Failed to migrate database: {e:?}")))?;
 
         Ok(Self { sea })
     }

@@ -156,15 +156,12 @@ async fn event_handler(
 
             commands::guild_config::on_member_join(store.clone(), new_member)
                 .await
-                .log("commands::modlog::on_member_join")
+                .log("commands::guild_config::on_member_join")
         }
         serenity::FullEvent::GuildMemberUpdate { new, event, .. } => {
             #[cfg(debug_assertions)]
             info!("{:?}\n{:?}", new, event);
 
-            commands::ensure_role::on_member_update(store.clone(), ctx, new, event)
-                .await
-                .log("commands::ensure_role::on_member_update");
             commands::auto_role::on_member_update(store.clone(), ctx, new, event)
                 .await
                 .log("commands::auto_role::on_member_update");

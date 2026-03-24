@@ -4,7 +4,6 @@ pub mod anti_spam;
 pub mod auto_role;
 pub mod basic;
 pub mod censor;
-pub mod ensure_role;
 pub mod feeds;
 pub mod guild_config;
 pub mod links;
@@ -20,7 +19,6 @@ pub fn commands() -> Vec<Command> {
         basic::presence(),
         basic::register(),
         censor::censor(),
-        ensure_role::ensure_role(),
         feeds::feed(),
         guild_config::guild_config(),
         links::link(),

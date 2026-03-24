@@ -3,7 +3,6 @@
 pub mod anti_spam_config;
 pub mod auto_role;
 pub mod censor_config;
-pub mod ensured_role;
 pub mod guild_config;
 pub mod known_stream;
 pub mod posted_stream;

@@ -253,7 +253,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(DeriveIden)]
-enum GuildConfig {
+pub enum GuildConfig {
     Table,
     Id,
     GuildLog,
@@ -264,14 +264,14 @@ enum GuildConfig {
 }
 
 #[derive(DeriveIden)]
-enum EnsuredRole {
+pub enum EnsuredRole {
     Table,
     GuildId,
     RoleId,
 }
 
 #[derive(DeriveIden)]
-enum RedditFeed {
+pub enum RedditFeed {
     Table,
     Id,
     GuildId,
@@ -282,7 +282,7 @@ enum RedditFeed {
 }
 
 #[derive(DeriveIden)]
-enum StreamObserver {
+pub enum StreamObserver {
     Table,
     Id,
     GuildId,
@@ -298,7 +298,7 @@ enum StreamObserver {
 }
 
 #[derive(DeriveIden)]
-enum KnownStream {
+pub enum KnownStream {
     Table,
     Id,
     StreamId,
@@ -311,7 +311,7 @@ enum KnownStream {
 }
 
 #[derive(DeriveIden)]
-enum PostedStream {
+pub enum PostedStream {
     Table,
     MessageId,
     UserLogin,
@@ -320,7 +320,7 @@ enum PostedStream {
 }
 
 #[derive(DeriveIden)]
-enum StickyMessage {
+pub enum StickyMessage {
     Table,
     Id,
     GuildId,
@@ -332,7 +332,7 @@ enum StickyMessage {
 }
 
 #[derive(DeriveIden)]
-enum Punishment {
+pub enum Punishment {
     #[sea_orm(iden = "punishment")]
     Enum,
     Mute,
@@ -340,7 +340,7 @@ enum Punishment {
 }
 
 #[derive(DeriveIden)]
-enum AntiSpamConfig {
+pub enum AntiSpamConfig {
     Table,
     Id,
     Punishment,
@@ -353,7 +353,7 @@ enum AntiSpamConfig {
 }
 
 #[derive(DeriveIden)]
-enum PunishedMessage {
+pub enum PunishedMessage {
     Table,
     Id,
     Content,
@@ -362,7 +362,7 @@ enum PunishedMessage {
 }
 
 #[derive(DeriveIden)]
-enum CensorConfig {
+pub enum CensorConfig {
     Table,
     Id,
     LogChannel,

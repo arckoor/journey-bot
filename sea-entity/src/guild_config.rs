@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
 #[sea_orm(table_name = "guild_config")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
@@ -10,8 +10,6 @@ pub struct Model {
     pub guild_log: Option<i64>,
     pub time_zone: String,
     pub new_user_threshold: i32,
-    #[sea_orm(column_type = "Double")]
-    pub onboarding_active_since: f64,
     pub trusted_roles: Vec<i64>,
 }
 

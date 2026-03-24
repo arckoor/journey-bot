@@ -32,7 +32,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(DeriveIden)]
-enum StagedCensorItem {
+pub enum StagedCensorItem {
     Table,
     Id,
     Item,

@@ -57,7 +57,7 @@ impl TwitchClient {
             vec![],
         )
         .await
-        .map_err(|_| BotError::new("Error while getting initial twitch token"))?;
+        .map_err(|e| BotError::new(format!("Error while getting initial twitch token: {e:?}")))?;
 
         Ok(Self {
             token: RwLock::new(token),

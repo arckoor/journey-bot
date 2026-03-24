@@ -48,19 +48,30 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
         .all(&ctx.data().db.sea)
         .await?;
 
+    if auto_roles.is_empty() {
+        eph(ctx, "No auto-role rules registered.").await?;
+        return Ok(());
+    }
+
     let mut embed = default_embed(ctx).title("Auto-role rules");
 
     for auto_role in auto_roles {
+        let required = if auto_role.required.is_empty() {
+            "[none]".to_string()
+        } else {
+            auto_role
+                .required
+                .into_iter()
+                .map(|id| RoleId::new(id as u64).mention().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+
         embed = embed.field(
             format!("ID: {}", auto_role.id),
             format!(
                 "{} -> {}",
-                auto_role
-                    .required
-                    .into_iter()
-                    .map(|id| RoleId::new(id as u64).mention().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", "),
+                required,
                 RoleId::new(auto_role.granted as u64).mention()
             ),
             false,
@@ -77,7 +88,7 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
 async fn add(
     ctx: Context<'_>,
     #[description = "The IDs of the roles required to trigger this auto-role, comma separated."]
-    required: String,
+    required: Option<String>,
     #[description = "The role that is granted when this auto-role is triggered"]
     granted: serenity::Role,
 ) -> Result<(), Error> {
@@ -86,15 +97,19 @@ async fn add(
         .await
         .ok_or("Expected to be in a guild")?;
 
-    let re = Regex::new("(, )+").unwrap();
+    let required = match required {
+        None => Vec::new(),
+        Some(req) => {
+            let re = Regex::new("(, )+").unwrap();
 
-    let required = re
-        .split(&required)
-        .map(|s| {
-            s.parse::<u64>()
-                .map_err(|_| BotError::new("Unable to parse `required` roles"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+            re.split(&req)
+                .map(|s| {
+                    s.parse::<u64>()
+                        .map_err(|_| BotError::new("Unable to parse `required` roles"))
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+    };
 
     let required_roles = required
         .iter()
@@ -202,7 +217,7 @@ async fn sweep(
     let mut more = true;
     let mut last = None;
 
-    let mut would_modify = Vec::new();
+    let mut modified = Vec::new();
 
     while more {
         more = false;
@@ -226,37 +241,29 @@ async fn sweep(
             .await?;
 
             role_cnt += would_add.len() + would_remove.len();
-            if dry {
-                for (roles, modifier) in [(would_add, "+"), (would_remove, "-")] {
-                    for (id, name) in roles {
-                        would_modify.push(format!(
-                            "{} ({}) -> {} {} ({})",
-                            member.user.name, member.user.id, modifier, name, id
-                        ));
-                    }
+            for (roles, modifier) in [(would_add, "+"), (would_remove, "-")] {
+                for (id, name) in roles {
+                    modified.push(format!(
+                        "{} ({}) -> {} {} ({})",
+                        member.user.name, member.user.id, modifier, name, id
+                    ));
                 }
             }
         }
     }
 
-    if !dry {
-        ctx.say(format!(
-            "I looked at {member_cnt} members and modified {role_cnt} roles."
-        ))
-        .await?;
+    let msg = if dry {
+        format!("I looked at {member_cnt} members and would modify {role_cnt} roles.")
     } else {
-        let mut reply = CreateReply::default().content(format!(
-            "I looked at {member_cnt} members and would modify {role_cnt} roles."
-        ));
-        if !would_modify.is_empty() {
-            reply = reply.attachment(CreateAttachment::bytes(
-                would_modify.join("\n"),
-                "roles.txt",
-            ));
-        }
+        format!("I looked at {member_cnt} members and modified {role_cnt} roles.")
+    };
 
-        ctx.send(reply).await?;
+    let mut reply = CreateReply::default().content(msg);
+    if !modified.is_empty() {
+        reply = reply.attachment(CreateAttachment::bytes(modified.join("\n"), "roles.txt"));
     }
+
+    ctx.send(reply).await?;
 
     Ok(())
 }

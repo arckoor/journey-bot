@@ -2,6 +2,7 @@
 .direnv
 .env
 /target
-config.toml
+config*.toml
+!config.example.toml
 links.json
 result
