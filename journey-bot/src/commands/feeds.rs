@@ -33,11 +33,14 @@ struct RedditToken {
 
 pub struct RedditClient {
     client: RwLock<Option<Me>>,
-    config: RedditConfig,
+    config: Option<RedditConfig>,
 }
 
 impl RedditClient {
-    pub async fn new(config: RedditConfig) -> Result<Self, BotError> {
+    pub async fn new(config: Option<RedditConfig>) -> Result<Self, BotError> {
+        if config.is_none() {
+            warn!("Reddit config not provided, client will not be initialised");
+        }
         let client = Self::make_client(&config).await;
 
         Ok(Self {
@@ -46,7 +49,11 @@ impl RedditClient {
         })
     }
 
-    async fn make_client(config: &RedditConfig) -> Option<Me> {
+    async fn make_client(config: &Option<RedditConfig>) -> Option<Me> {
+        let Some(config) = config else {
+            return None;
+        };
+
         let client = Reddit::new(&config.user_agent, &config.id, &config.secret)
             .username(&config.username)
             .password(&config.password)
@@ -82,6 +89,10 @@ impl RedditClient {
             .clone()
             .ok_or(BotError::new("Failed to create reddit client"))
     }
+
+    fn can_init(&self) -> bool {
+        self.config.is_some()
+    }
 }
 
 pub struct RedditScheduler;
@@ -98,6 +109,13 @@ impl RedditScheduler {
     }
 
     pub fn schedule(id: String, store: Arc<Store>) {
+        if !store.reddit_client.can_init() {
+            warn!(
+                "Requested to schedule feed {}, but no reddit config is available",
+                id
+            );
+            return;
+        }
         tokio::spawn(async move {
             // sleep at startup so we have enough time to init everything
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -326,7 +344,10 @@ async fn reddit(
         .unwrap_or("{{title}}\n{{link}}".to_string())
         .replace("\\n", "\n");
 
-    let client = ctx.data().reddit_client.get_client().await?;
+    let Ok(client) = ctx.data().reddit_client.get_client().await else {
+        eph(ctx, "Reddit client is currently unavailable.").await?;
+        return Ok(());
+    };
     let subreddit = Subreddit::new_oauth(&subreddit_name, &client.client);
     let Ok(_) = subreddit.about().await else {
         eph(ctx, "Subreddit not found.").await?;

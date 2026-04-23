@@ -73,7 +73,7 @@ pub struct EmojiConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct ApiConfig {
-    pub reddit: RedditConfig,
+    pub reddit: Option<RedditConfig>,
     pub twitch: TwitchConfig,
 }
 

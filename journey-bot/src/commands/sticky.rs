@@ -58,12 +58,31 @@ impl StickyLock {
 
 #[poise::command(
     slash_command,
-    subcommands("list", "fmt", "set", "remove"),
+    subcommands("stickify", "list", "fmt", "set", "remove"),
     guild_only,
     default_member_permissions = "BAN_MEMBERS",
     required_bot_permissions = "SEND_MESSAGES"
 )]
 pub async fn stick(_: Context<'_>) -> Result<(), Error> {
+    Ok(())
+}
+
+/// Format a message for use with other stick commands.
+#[poise::command(slash_command)]
+async fn stickify(
+    ctx: Context<'_>,
+    #[description = "ID of the message to stickify"]
+    #[rename = "message-id"]
+    message_id: MessageId,
+) -> Result<(), Error> {
+    let msg = ctx
+        .data()
+        .ctx
+        .get_message(ctx.channel_id(), message_id)
+        .await?;
+
+    ctx.say(msg.content.replace("\n", "\\n")).await?;
+
     Ok(())
 }
 

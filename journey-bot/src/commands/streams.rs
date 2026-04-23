@@ -674,14 +674,8 @@ impl TwitchScheduler {
                 &format!("https://www.twitch.tv/{}", stream.user_login.as_str()),
             );
 
-        match send_message(
-            store.clone(),
-            ChannelId::new(observer.channel_id as u64),
-            msg,
-            None,
-        )
-        .await
-        {
+        let channel_id = ChannelId::new(observer.channel_id as u64);
+        match send_message(store.clone(), channel_id, msg, None).await {
             Ok(msg) => Ok(msg.id),
             Err(err) => {
                 warn!(
@@ -692,7 +686,7 @@ impl TwitchScheduler {
                     store.clone(),
                     GuildId::new(observer.guild_id as u64),
                     Emoji::Warning,
-                    format!("I could not send a stream message for observer (`{}`) in channel (`{}`). I will try again in 10 minutes.", observer.id, observer.channel_id
+                    format!("I could not send a stream message for observer `{}` in channel {} (`{}`). I will try again in 10 minutes.", observer.id, channel_id.mention(), observer.channel_id
                     ),
                     None
                 )
