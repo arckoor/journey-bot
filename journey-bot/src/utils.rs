@@ -14,6 +14,8 @@ use poise::{
         GuildId, Http, Member, Message, Role, RoleId,
     },
 };
+
+#[cfg(feature = "reddit-api")]
 use roux::util::RouxError;
 use sea_orm::{DbErr, SqlErr};
 use tracing::{error, info};
@@ -55,6 +57,7 @@ impl From<DbErr> for BotError {
     }
 }
 
+#[cfg(feature = "reddit-api")]
 impl From<RouxError> for BotError {
     #[track_caller]
     fn from(value: RouxError) -> Self {

@@ -22,10 +22,11 @@ jobs:
       fail-fast: false
       matrix:
         build-flags: ["", "--release"]
+        features: ["", "--features reddit-api"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - run: cargo build ${{ matrix.build-flags }}
+      - run: cargo build ${{ matrix.build-flags }} ${{ matrix.features }}
 
   build-nix:
     runs-on: ubuntu-latest
@@ -34,7 +35,7 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: cachix/cachix-action@v16
+      - uses: cachix/cachix-action@v17
         with:
           name: arckoor-cache
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
@@ -52,7 +53,11 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ["", "--features reddit-api"]
     steps:
       - uses: actions/checkout@v5
       - name: Lint Code
-        run: cargo clippy -- -D warnings
+        run: cargo clippy ${{ matrix.features }} -- -D warnings

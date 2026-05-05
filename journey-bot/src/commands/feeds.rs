@@ -1,5 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
+use chrono::DateTime;
 use poise::{
     CreateReply,
     serenity_prelude::{
@@ -7,35 +8,89 @@ use poise::{
         futures::{self, Stream},
     },
 };
-use regex::Regex;
-use roux::{Me, Reddit, Subreddit, response::BasicThing, submission::SubmissionData};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
 };
-use serde::Deserialize;
-use tokio::sync::RwLock;
+use serde::{Deserialize, Deserializer};
 use tokio_retry2::{Retry, RetryError, strategy::ExponentialFactorBackoff};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 use crate::{
     Context, Error,
-    config::RedditConfig,
     emoji::Emoji,
     store::Store,
-    utils::{BotError, LogError, eph, guild_log, now, send_message, timestamp_from_f64_with_tz},
+    utils::{BotError, LogError, eph, guild_log, send_message, timestamp_from_f64_with_tz},
     views::embed::default_embed,
 };
 
+#[cfg(feature = "reddit-api")]
+use crate::{config::RedditConfig, utils::now};
+#[cfg(feature = "reddit-api")]
+use roux::{Me, Reddit, Subreddit, response::BasicThing, submission::SubmissionData};
+#[cfg(feature = "reddit-api")]
+use tokio::sync::RwLock;
+#[cfg(feature = "reddit-api")]
+use tracing::error;
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename = "feed")]
+#[cfg(not(feature = "reddit-api"))]
+pub struct Feed {
+    #[serde(rename = "entry")]
+    entries: Vec<Entry>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename = "entry")]
+pub struct Entry {
+    #[serde(deserialize_with = "deserialize_timestamp")]
+    published: f64,
+    title: String,
+    #[serde(rename = "link")]
+    link: Link,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+pub struct Link {
+    #[serde(rename = "@href")]
+    href: String,
+}
+
+fn deserialize_timestamp<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
+    let dt = DateTime::parse_from_rfc3339(&s).map_err(serde::de::Error::custom)?;
+    Ok(dt.timestamp() as f64)
+}
+
+#[cfg(feature = "reddit-api")]
+impl From<BasicThing<SubmissionData>> for Entry {
+    fn from(submission: BasicThing<SubmissionData>) -> Self {
+        Self {
+            published: submission.data.created_utc,
+            title: submission.data.title,
+            link: Link {
+                href: format!("https://www.reddit.com{}", submission.data.permalink),
+            },
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
+#[cfg(feature = "reddit-api")]
 struct RedditToken {
     exp: f32,
 }
 
+#[cfg(feature = "reddit-api")]
 pub struct RedditClient {
     client: RwLock<Option<Me>>,
     config: Option<RedditConfig>,
 }
 
+#[cfg(feature = "reddit-api")]
 impl RedditClient {
     pub async fn new(config: Option<RedditConfig>) -> Result<Self, BotError> {
         if config.is_none() {
@@ -109,6 +164,7 @@ impl RedditScheduler {
     }
 
     pub fn schedule(id: String, store: Arc<Store>) {
+        #[cfg(feature = "reddit-api")]
         if !store.reddit_client.can_init() {
             warn!(
                 "Requested to schedule feed {}, but no reddit config is available",
@@ -127,30 +183,85 @@ impl RedditScheduler {
 
     pub async fn watch_subreddit(id: String, store: Arc<Store>) -> Result<(), BotError> {
         info!("{}", format!("Started observer for feed {}", id));
-        let feed = sea_entity::reddit_feed::Entity::find_by_id(&id)
+        sea_entity::reddit_feed::Entity::find_by_id(&id)
             .one(&store.db.sea)
             .await?
             .ok_or(BotError::new("Feed not found"))?;
-        let mut latest_time = feed.latest_post;
 
         async fn query_subreddit(
-            store: Arc<Store>,
+            #[allow(unused)] store: Arc<Store>,
             subreddit: &str,
-        ) -> Result<Vec<BasicThing<SubmissionData>>, RetryError<()>> {
-            let client = store
-                .reddit_client
-                .get_client()
-                .await
-                .map_err(|_| RetryError::to_transient::<()>(()).unwrap_err())?;
-            let subreddit = Subreddit::new_oauth(subreddit, &client.client);
+        ) -> Result<Vec<Entry>, RetryError<()>> {
+            #[cfg(feature = "reddit-api")]
+            let entries = {
+                let client = store
+                    .reddit_client
+                    .get_client()
+                    .await
+                    .map_err(|_| RetryError::to_transient::<()>(()).unwrap_err())?;
 
-            match subreddit.latest(25, None).await {
-                Ok(data) => Ok(data.data.children.into_iter().rev().collect()),
-                Err(err) => {
-                    warn!("Got error from reddit api: {}", err);
-                    RetryError::to_transient(())
+                let Some(subreddit_name) = subreddit.trim_end_matches("/").rsplit("/").next()
+                else {
+                    return RetryError::to_permanent(());
+                };
+
+                let subreddit = Subreddit::new_oauth(subreddit_name, &client.client);
+
+                match subreddit.latest(25, None).await {
+                    Ok(data) => Ok(data
+                        .data
+                        .children
+                        .into_iter()
+                        .rev()
+                        .map(|e| e.into())
+                        .collect()),
+                    Err(err) => {
+                        warn!("Got error from reddit api: {}", err);
+                        RetryError::to_transient(())
+                    }
                 }
-            }
+            };
+
+            #[cfg(not(feature = "reddit-api"))]
+            let entries = {
+                let resp = match reqwest::get(subreddit).await {
+                    Ok(resp) => resp,
+                    Err(err) => {
+                        if err.is_builder() {
+                            return RetryError::to_permanent(());
+                        }
+                        return RetryError::to_transient(());
+                    }
+                };
+
+                let text = resp
+                    .error_for_status()
+                    .map_err(|err| {
+                        warn!("Error while fetching RSS document: {:?}", err);
+                        RetryError::Transient {
+                            err: (),
+                            retry_after: None,
+                        }
+                    })?
+                    .text()
+                    .await
+                    .map_err(|_| RetryError::Transient {
+                        err: (),
+                        retry_after: None,
+                    })?;
+
+                let feed = serde_xml_rs::from_str::<Feed>(&text).map_err(|err| {
+                    warn!("Error deserializing XML document: {:?}", err);
+                    RetryError::Transient {
+                        err: (),
+                        retry_after: None,
+                    }
+                })?;
+
+                Ok(feed.entries)
+            };
+
+            entries
         }
 
         let retry_strategy = ExponentialFactorBackoff::from_millis(
@@ -175,19 +286,33 @@ impl RedditScheduler {
                 break Ok(());
             };
 
-            let submissions = Retry::spawn(retry_strategy.clone(), || {
+            let Ok(submissions) = Retry::spawn(retry_strategy.clone(), || {
                 query_subreddit(store.clone(), &feed.subreddit)
             })
             .await
-            .unwrap();
+            else {
+                guild_log(
+                    store,
+                    GuildId::new(feed.guild_id as u64),
+                    Emoji::Warning,
+                    format!("Tried to query entries for feed (`{}`), but URL was malformed. This will not be reattempted.", feed.id),
+                    None,
+                )
+                .await;
+                return Ok(());
+            };
 
+            let mut latest_time = feed.latest_post;
             for submission in submissions {
-                if submission.data.created_utc > latest_time {
-                    Self::post(store.clone(), &feed, &submission).await;
-                    latest_time = submission.data.created;
+                if submission.published > latest_time {
+                    let needs_retry = Self::post(store.clone(), &feed, &submission).await;
+                    if needs_retry {
+                        break;
+                    }
+                    latest_time = submission.published;
                     {
                         let mut updated_feed = feed.into_active_model();
-                        updated_feed.latest_post = Set(submission.data.created);
+                        updated_feed.latest_post = Set(submission.published);
                         feed = updated_feed.update(&store.db.sea).await?;
                     }
                 }
@@ -200,15 +325,12 @@ impl RedditScheduler {
     async fn post(
         store: Arc<Store>,
         feed: &sea_entity::reddit_feed::Model,
-        submission: &BasicThing<SubmissionData>,
-    ) {
+        submission: &Entry,
+    ) -> bool {
         let msg = feed
             .template
-            .replace("{{title}}", &submission.data.title)
-            .replace(
-                "{{link}}",
-                &format!("https://www.reddit.com{}", submission.data.permalink),
-            );
+            .replace("{{title}}", &submission.title)
+            .replace("{{link}}", &submission.link.href);
 
         if let Err(err) = send_message(
             store.clone(),
@@ -232,6 +354,9 @@ impl RedditScheduler {
                 None,
             ).await;
             tokio::time::sleep(Duration::from_secs(60 * 10)).await;
+            true
+        } else {
+            false
         }
     }
 }
@@ -323,49 +448,55 @@ async fn add(_: Context<'_>) -> Result<(), Error> {
 #[poise::command(slash_command)]
 async fn reddit(
     ctx: Context<'_>,
-    #[rename = "subreddit-name"]
-    #[description = "The name of the subreddit"]
-    #[min_length = 1]
-    #[max_length = 21]
-    subreddit_name: String,
+    #[rename = "subreddit-link"]
+    #[description = "A link to the subreddit."]
+    subreddit_link: String,
     #[description = "The template for new posts."] template: Option<String>,
 ) -> Result<(), Error> {
     let guild_id = ctx.guild_id().ok_or("Expected to be in a guild")?;
-    let re = Regex::new("[a-zA-Z0-9_]{1,21}").unwrap();
-
-    if !re.is_match(&subreddit_name) {
-        eph(ctx, "Invalid subreddit name.").await?;
-        return Ok(());
-    }
 
     ctx.defer().await?;
+
+    #[cfg(feature = "reddit-api")]
+    {
+        let re = regex::Regex::new("[a-zA-Z0-9_]{1,21}").unwrap();
+
+        let Some(partial_name) = subreddit_link.trim_end_matches("/").rsplit("/").next() else {
+            eph(ctx, "Invalid subreddit link.").await?;
+            return Ok(());
+        };
+        if !re.is_match(partial_name) {
+            eph(ctx, "Invalid subreddit name.").await?;
+            return Ok(());
+        }
+
+        let Ok(client) = ctx.data().reddit_client.get_client().await else {
+            eph(ctx, "Reddit client is currently unavailable.").await?;
+            return Ok(());
+        };
+        let subreddit = Subreddit::new_oauth(partial_name, &client.client);
+        let Ok(_) = subreddit.about().await else {
+            eph(ctx, "Subreddit not found.").await?;
+            return Ok(());
+        };
+    }
 
     let template = template
         .unwrap_or("{{title}}\n{{link}}".to_string())
         .replace("\\n", "\n");
 
-    let Ok(client) = ctx.data().reddit_client.get_client().await else {
-        eph(ctx, "Reddit client is currently unavailable.").await?;
-        return Ok(());
-    };
-    let subreddit = Subreddit::new_oauth(&subreddit_name, &client.client);
-    let Ok(_) = subreddit.about().await else {
-        eph(ctx, "Subreddit not found.").await?;
-        return Ok(());
-    };
-
     let feed = sea_entity::reddit_feed::ActiveModel {
         id: Set(cuid2::slug()),
         guild_id: Set(guild_id.get() as i64),
         channel_id: Set(ctx.channel_id().get() as i64),
-        subreddit: Set(subreddit_name.clone()),
+        subreddit: Set(subreddit_link.clone()),
         template: Set(template),
         ..Default::default()
     }
     .insert(&ctx.data().db.sea)
     .await?;
 
-    ctx.say(format!("Added feed for r/{}", subreddit_name))
+    ctx.say(format!("Added feed for `{}`", subreddit_link))
         .await?;
 
     RedditScheduler::schedule(feed.id.clone(), ctx.data().clone());
@@ -375,8 +506,8 @@ async fn reddit(
         guild_id,
         Emoji::Feed,
         format!(
-            "A feed for r/{} (`{}`) was added to {} by {} (`{}`)",
-            subreddit_name,
+            "A feed `{}` (`{}`) was added to {} by {} (`{}`)",
+            subreddit_link,
             feed.id,
             ctx.channel_id().mention(),
             ctx.author().name,

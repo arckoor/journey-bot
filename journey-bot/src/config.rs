@@ -73,10 +73,12 @@ pub struct EmojiConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct ApiConfig {
+    #[cfg(feature = "reddit-api")]
     pub reddit: Option<RedditConfig>,
     pub twitch: TwitchConfig,
 }
 
+#[cfg(feature = "reddit-api")]
 #[derive(Debug, Deserialize)]
 pub struct RedditConfig {
     pub id: String,

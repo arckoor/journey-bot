@@ -5,8 +5,7 @@ use tokio::sync::mpsc::Sender;
 
 use crate::{
     commands::{
-        anti_spam::ChannelMessage, feeds::RedditClient, links::Links, sticky::StickyLock,
-        streams::TwitchClient,
+        anti_spam::ChannelMessage, links::Links, sticky::StickyLock, streams::TwitchClient,
     },
     config::StoreConfig,
     db::Database,
@@ -14,12 +13,16 @@ use crate::{
     utils::BotError,
 };
 
+#[cfg(feature = "reddit-api")]
+use crate::commands::feeds::RedditClient;
+
 pub struct Store {
     pub admin_guild: u64,
     pub embed_color: (u8, u8, u8),
     pub db: Database,
     pub emoji: EmojiStore,
     pub links: Links,
+    #[cfg(feature = "reddit-api")]
     pub reddit_client: RedditClient,
     pub twitch_client: TwitchClient,
     pub sticky: StickyLock,
@@ -38,6 +41,7 @@ impl Store {
         let emoji = EmojiStore::new(ctx.clone(), setup.admin_guild, emoji).await?;
         let links = Links::new().await?;
 
+        #[cfg(feature = "reddit-api")]
         let reddit_client = RedditClient::new(api.reddit).await?;
         let twitch_client = TwitchClient::new(api.twitch).await?;
 
@@ -49,6 +53,7 @@ impl Store {
             embed_color: setup.embed_color,
             db,
             links,
+            #[cfg(feature = "reddit-api")]
             reddit_client,
             twitch_client,
             sticky,
