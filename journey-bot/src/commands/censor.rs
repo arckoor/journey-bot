@@ -15,7 +15,10 @@ use crate::{
     db::{get_config, get_config_from_id},
     emoji::Emoji,
     store::Store,
-    utils::{BotError, censor_log, eph, fetch_sheet, guild_log, now, schedule_at_interval},
+    utils::{
+        BotError, censor_log, eph, fetch_sheet, guild_log, message_can_be_censored, now,
+        schedule_at_interval,
+    },
     views::embed::default_embed,
 };
 
@@ -440,12 +443,12 @@ async fn sheet_remove(ctx: Context<'_>) -> Result<(), Error> {
 }
 
 pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Error> {
-    if message.author.bot {
-        return Ok(());
-    }
     let Some(guild_id) = message.guild_id else {
         return Ok(());
     };
+    if !message_can_be_censored(store.clone(), message, guild_id).await? {
+        return Ok(());
+    }
 
     let censor_config =
         get_config_from_id::<sea_entity::censor_config::Entity>(store.clone(), guild_id).await?;
@@ -458,6 +461,7 @@ pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Erro
         .chain(censor_config.auto_censor_list.iter())
     {
         if content.contains(censor) {
+            let _ = message.delete(&store.ctx).await;
             censor_log(
                 store.clone(),
                 guild_id,
@@ -473,7 +477,6 @@ pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Erro
                 None,
             )
             .await;
-            let _ = message.delete(&store.ctx).await;
             break;
         }
     }

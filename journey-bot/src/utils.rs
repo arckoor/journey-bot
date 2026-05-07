@@ -230,6 +230,29 @@ pub fn member_is_valid_target(member: &Member) -> bool {
     !member.user.bot
 }
 
+pub async fn message_can_be_censored(
+    store: Arc<Store>,
+    message: &Message,
+    guild_id: GuildId,
+) -> Result<bool, Error> {
+    if message.author.bot {
+        return Ok(false);
+    }
+    let Some(ref member) = message.member else {
+        return Ok(false);
+    };
+
+    let guild_config =
+        get_config_from_id::<sea_entity::guild_config::Entity>(store, guild_id).await?;
+
+    Ok(member
+        .roles
+        .iter()
+        .filter(|id| guild_config.trusted_roles.contains(&(id.get() as i64)))
+        .collect::<Vec<_>>()
+        .is_empty())
+}
+
 fn filter_roles(
     roles: &[u64],
     guild_roles: &HashMap<RoleId, Role>,

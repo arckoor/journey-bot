@@ -24,12 +24,11 @@ use unicode_normalization::UnicodeNormalization;
 
 use crate::{
     Context, Error,
-    db::get_config_from_id,
     emoji::Emoji,
     store::Store,
     utils::{
-        BotError, LogError, censor_log, eph, guild_log, now, schedule_at_interval, send_message,
-        timestamp_from_f64, timestamp_now,
+        BotError, LogError, censor_log, eph, guild_log, message_can_be_censored, now,
+        schedule_at_interval, send_message, timestamp_from_f64, timestamp_now,
     },
     views::embed::default_embed,
 };
@@ -1211,26 +1210,10 @@ async fn trigger_update(ctx: Context<'_>, guild_id: GuildId, disable: bool) {
 }
 
 pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Error> {
-    if message.author.bot {
-        return Ok(());
-    }
     let Some(guild_id) = message.guild_id else {
         return Ok(());
     };
-    let Some(ref member) = message.member else {
-        return Ok(());
-    };
-
-    let guild_config =
-        get_config_from_id::<sea_entity::guild_config::Entity>(store.clone(), guild_id).await?;
-
-    if !member
-        .roles
-        .iter()
-        .filter(|id| guild_config.trusted_roles.contains(&(id.get() as i64)))
-        .collect::<Vec<_>>()
-        .is_empty()
-    {
+    if !message_can_be_censored(store.clone(), message, guild_id).await? {
         return Ok(());
     }
 
