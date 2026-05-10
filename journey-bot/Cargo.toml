@@ -25,7 +25,9 @@ regex = "1.12.3"
 reqwest = { version = "0.12.28", features = [
   "rustls-tls",
 ], default-features = false }
-roux = { version = "2.2.15", features = ["rustls"], default-features = false, optional = true }
+roux = { version = "2.2.15", features = [
+  "rustls",
+], default-features = false, optional = true }
 sea-entity = { path = "../sea-entity" }
 sea-migration = { path = "../sea-migration" }
 sea-orm = { version = "1.1.20", features = [
@@ -36,7 +38,7 @@ sea-orm = { version = "1.1.20", features = [
 serde = { version = "1.0.228", features = ["derive"] }
 serde-xml-rs = "0.8.2"
 serde_json = "1.0.149"
-tokio = "1.52.1"
+tokio = "1.52.2"
 tokio-retry2 = { version = "0.9.1", features = ["tracing"] }
 tracing = "0.1.44"
 tracing-subscriber = "0.3.23"

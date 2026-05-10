@@ -317,8 +317,15 @@ impl RedditScheduler {
                     }
                 }
             }
+
+            let delay = if cfg!(feature = "reddit-api") {
+                Duration::from_secs(60)
+            } else {
+                Duration::from_mins(10)
+            };
+
             // we don't want to hammer the api
-            tokio::time::sleep(Duration::from_secs(60)).await;
+            tokio::time::sleep(delay).await;
         }
     }
 

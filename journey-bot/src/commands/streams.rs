@@ -171,7 +171,7 @@ impl TwitchScheduler {
                         guild_id,
                         Emoji::Twitch,
                         format!(
-                            "User `{}` was staged to be added to the blacklist from observer `{}`",
+                            "User `{}` was staged to be added to the blacklist for observer `{}`",
                             added, observer_id
                         ),
                         None,

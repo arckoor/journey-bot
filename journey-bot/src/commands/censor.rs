@@ -49,7 +49,6 @@ impl CensorScheduler {
         for config in configs {
             let config_id = config.id.to_string();
             let guild_id = GuildId::new(config.id as u64);
-            info!("Updating censor list config for guild {}", config_id);
 
             if let Some(sheet_id) = config.auto_censor_list_sheet_id.clone() {
                 let columns = config.auto_censor_list_column_names.clone();
@@ -62,6 +61,10 @@ impl CensorScheduler {
                 else {
                     continue;
                 };
+
+                if !staged.is_empty() || !removed.is_empty() {
+                    info!("Updating censor list config for guild {}", config_id);
+                }
 
                 let hrs = CENSOR_LIST_STAGING_TIME / 3600;
                 for added in staged {
@@ -121,7 +124,6 @@ impl CensorScheduler {
         for config in configs {
             let config_id = config.id.to_string();
             let guild_id = GuildId::new(config.id as u64);
-            info!("Committing new censor items for guild {}", guild_id);
 
             let Ok(committed) = store
                 .db
@@ -130,6 +132,10 @@ impl CensorScheduler {
             else {
                 continue;
             };
+
+            if !committed.is_empty() {
+                info!("Committing new censor items for guild {}", guild_id);
+            }
 
             for added in committed {
                 guild_log(
