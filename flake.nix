@@ -113,9 +113,10 @@
           copyToRoot = pkgs.buildEnv {
             name = "image-root";
             paths = [
+              pkgs.cacert
               journey-bot
             ];
-            pathsToLink = ["/bin" "/journey-bot"];
+            pathsToLink = ["/bin" "/journey-bot" "/etc"];
           };
 
           config = {
