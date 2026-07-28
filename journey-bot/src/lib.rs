@@ -17,10 +17,6 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::{
-    commands::{
-        anti_spam::PoolManager, censor::CensorScheduler, feeds::RedditScheduler,
-        streams::TwitchScheduler,
-    },
     config::ActivityConfig,
     store::Store,
     utils::{LogError, create_activity},
@@ -99,6 +95,7 @@ pub async fn launch(config: JourneyBotConfig) -> Result<(), serenity::Error> {
             Box::pin(async move {
                 let (tx, rx) = mpsc::channel(100);
                 let store = Arc::new(Store::new(store, ctx.http.clone(), tx).await?);
+                commands::schedule(store.clone(), rx).await?;
                 #[cfg(debug_assertions)]
                 {
                     use poise::serenity_prelude::GuildId;
@@ -117,10 +114,6 @@ pub async fn launch(config: JourneyBotConfig) -> Result<(), serenity::Error> {
                     serenity::Command::set_global_commands(ctx, vec![]).await?;
                     poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 }
-                RedditScheduler::schedule_all(store.clone()).await?;
-                TwitchScheduler::schedule_all(store.clone()).await?;
-                PoolManager::schedule(store.clone(), rx);
-                CensorScheduler::schedule_all(store.clone()).await;
                 Ok(store)
             })
         })
@@ -156,7 +149,7 @@ async fn event_handler(
 
             commands::guild_config::on_member_join(store.clone(), new_member)
                 .await
-                .log("commands::guild_config::on_member_join")
+                .log();
         }
         serenity::FullEvent::GuildMemberUpdate { new, event, .. } => {
             #[cfg(debug_assertions)]
@@ -164,21 +157,34 @@ async fn event_handler(
 
             commands::auto_role::on_member_update(store.clone(), ctx, new, event)
                 .await
-                .log("commands::auto_role::on_member_update");
+                .log();
         }
         serenity::FullEvent::Message { new_message } => {
             #[cfg(debug_assertions)]
             info!("{:?}", new_message);
 
-            commands::anti_spam::on_message(store.clone(), new_message)
-                .await
-                .log("commands::anti_spam::on_message");
-            commands::censor::on_message(store.clone(), new_message)
-                .await
-                .log("commands::censor::on_message");
-            commands::sticky::on_message(store.clone(), new_message)
-                .await
-                .log("commands::sticky::on_message");
+            tokio::join!(
+                async {
+                    commands::anti_spam::on_message(store.clone(), new_message)
+                        .await
+                        .log();
+                },
+                async {
+                    commands::censor::on_message(store.clone(), new_message)
+                        .await
+                        .log();
+                },
+                async {
+                    commands::sticky::on_message(store.clone(), new_message)
+                        .await
+                        .log();
+                },
+                async {
+                    commands::bypass::on_message(store.clone(), new_message)
+                        .await
+                        .log();
+                },
+            );
         }
         _ => {}
     }

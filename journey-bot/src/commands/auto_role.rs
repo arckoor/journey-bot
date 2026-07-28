@@ -344,12 +344,12 @@ async fn add_auto_roles_to_member(
             store.clone(),
             guild_id.into(),
             Emoji::Warning,
-            "Some auto-role rules are not disjoint, refusing to process.",
+            "Some auto-role rules are not disjoint, refusing to continue.",
             None,
         )
         .await;
         return Err(Box::new(BotError::new(
-            "Some auto-role rules are not disjoint, refusing to process.",
+            "Some auto-role rules are not disjoint, refusing to continue.",
         )));
     }
 

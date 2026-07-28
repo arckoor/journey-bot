@@ -9,6 +9,7 @@ use poise::{
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
 };
+use secstr::SecUtf8;
 use tokio::sync::RwLock;
 use tokio_retry2::{Retry, RetryError, strategy::ExponentialFactorBackoff};
 use tracing::{info, warn};
@@ -37,8 +38,11 @@ const POSTED_STREAM_LIFETIME: u64 = 60 * 60 * 24 * 27;
 const BLACKLIST_STAGING_TIME: u64 = 60 * 60 * 24;
 
 pub struct TwitchClient {
-    token: RwLock<AppAccessToken>,
+    client_id: String,
+    client_secret: SecUtf8,
     client: twitch_api::TwitchClient<'static, reqwest::Client>,
+    token: RwLock<AppAccessToken>,
+    error_count: RwLock<u8>,
     filter_words: Vec<String>,
     new_threshold: f64,
     disappear_threshold: f64,
@@ -49,24 +53,37 @@ pub struct TwitchClient {
 impl TwitchClient {
     pub async fn new(config: TwitchConfig) -> Result<Self, BotError> {
         let client = twitch_api::TwitchClient::<reqwest::Client>::new();
-
-        let token = AppAccessToken::get_app_access_token(
-            &client,
-            ClientId::from(config.id),
-            ClientSecret::from(config.secret),
-            vec![],
-        )
-        .await
-        .map_err(|e| BotError::new(format!("Error while getting initial twitch token: {e:?}")))?;
+        let token = Self::get_access_token(&client, &config.id, &config.secret).await?;
 
         Ok(Self {
-            token: RwLock::new(token),
+            client_id: config.id,
+            client_secret: config.secret,
             client,
+            token: RwLock::new(token),
+            error_count: RwLock::new(0),
             filter_words: config.filter_words,
             new_threshold: config.new_threshold,
             disappear_threshold: config.disappear_threshold,
             offline_threshold: config.offline_threshold,
             max_concurrent_streams: config.max_concurrent_streams,
+        })
+    }
+
+    async fn get_access_token(
+        client: &twitch_api::TwitchClient<'static, reqwest::Client>,
+        id: &str,
+        secret: &SecUtf8,
+    ) -> Result<AppAccessToken, BotError> {
+        AppAccessToken::get_app_access_token(
+            client,
+            ClientId::from(id),
+            ClientSecret::from(secret.unsecure()),
+            vec![],
+        )
+        .await
+        .map_err(|e| {
+            warn!("Error while getting twitch token: {e:?}");
+            BotError::new(format!("Error while getting twitch token: {e:?}"))
         })
     }
 
@@ -77,10 +94,27 @@ impl TwitchClient {
             let mut token = self.token.write().await;
             if token.is_elapsed() {
                 info!("Rotating twitch access token");
-                token
-                    .refresh_token(&self.client)
-                    .await
-                    .map_err(|_| BotError::new("Error while refreshing twitch token"))?;
+                if let Err(e) = token.refresh_token(&self.client).await.map_err(|e| {
+                    warn!("Error while refreshing twitch token: {e:?}");
+                    BotError::new("Error while refreshing twitch token")
+                }) {
+                    let mut err_count = self.error_count.write().await;
+                    *err_count += 1;
+                    if *err_count > 10 {
+                        warn!(
+                            "Refreshing twitch access token failed many times, trying to get a new one"
+                        );
+                        let tok = Self::get_access_token(
+                            &self.client,
+                            &self.client_id,
+                            &self.client_secret,
+                        )
+                        .await?;
+                        *token = tok;
+                        return Ok(token.clone());
+                    }
+                    return Err(e);
+                }
             }
             Ok(token.clone())
         } else {
@@ -395,11 +429,11 @@ impl TwitchScheduler {
             for stream in streams.data {
                 Self::process_stream(store.clone(), stream, &observer, now)
                     .await
-                    .log("TwitchScheduler::process_stream");
+                    .log();
             }
             Self::remove_known_streams(store.clone(), observer, now)
                 .await
-                .log("TwitchScheduler::remove_known_streams");
+                .log();
             // we don't want to hammer the api
             tokio::time::sleep(Duration::from_secs(60)).await;
         }

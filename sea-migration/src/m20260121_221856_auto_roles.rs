@@ -24,7 +24,7 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(AutoRole::Table).to_owned())
+            .drop_table(Table::drop().table(AutoRole::Table).if_exists().to_owned())
             .await?;
 
         Ok(())

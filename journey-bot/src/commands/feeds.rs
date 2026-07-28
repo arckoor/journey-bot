@@ -175,9 +175,7 @@ impl RedditScheduler {
         tokio::spawn(async move {
             // sleep at startup so we have enough time to init everything
             tokio::time::sleep(Duration::from_secs(5)).await;
-            Self::watch_subreddit(id, store.clone())
-                .await
-                .log("RedditScheduler::schedule")
+            Self::watch_subreddit(id, store.clone()).await.log();
         });
     }
 

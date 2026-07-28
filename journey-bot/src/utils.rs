@@ -412,14 +412,16 @@ where
     });
 }
 
-pub trait LogError<T> {
-    fn log(self, from: &str);
+pub trait LogError {
+    #[track_caller]
+    fn log(self);
 }
 
-impl<T, E: std::fmt::Display> LogError<T> for Result<T, E> {
-    fn log(self, from: &str) {
+impl<T, E: std::fmt::Display> LogError for Result<T, E> {
+    #[track_caller]
+    fn log(self) {
         if let Err(err) = self {
-            tracing::error!("error in {from}: {err}")
+            tracing::error!("error at {}: {err}", std::panic::Location::caller())
         }
     }
 }

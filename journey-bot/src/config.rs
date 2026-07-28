@@ -1,4 +1,5 @@
 use poise::serenity_prelude::ActivityType;
+use secstr::SecUtf8;
 use serde::Deserialize;
 
 fn deserialize_activity<'de, D>(deserializer: D) -> Result<ActivityType, D::Error>
@@ -91,7 +92,7 @@ pub struct RedditConfig {
 #[derive(Debug, Deserialize)]
 pub struct TwitchConfig {
     pub id: String,
-    pub secret: String,
+    pub secret: SecUtf8,
     pub filter_words: Vec<String>,
     pub new_threshold: f64,
     pub disappear_threshold: f64,

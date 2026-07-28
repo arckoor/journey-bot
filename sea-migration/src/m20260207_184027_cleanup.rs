@@ -1,15 +1,9 @@
-use sea_orm_migration::{prelude::*, sea_orm::Statement};
+use sea_orm_migration::prelude::*;
 
 use crate::{
     m20250826_012513_init::{EnsuredRole, GuildConfig},
     m20260121_221856_auto_roles::AutoRole,
 };
-
-fn iden_to_str(id: impl Iden) -> String {
-    let mut buf = String::new();
-    id.unquoted(&mut buf);
-    buf
-}
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -18,7 +12,6 @@ pub struct Migration;
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         let db = manager.get_connection();
-        let backend = db.get_database_backend();
 
         manager
             .alter_table(
@@ -29,19 +22,17 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
-        let select = Query::select()
+        let mut q = Query::select();
+        let select = q
             .columns([EnsuredRole::GuildId, EnsuredRole::RoleId])
-            .from(EnsuredRole::Table)
-            .build(PostgresQueryBuilder);
+            .from(EnsuredRole::Table);
 
-        for row in db
-            .query_all(Statement::from_sql_and_values(backend, select.0, select.1))
-            .await?
-        {
-            let guild_id: i64 = row.try_get("", &iden_to_str(EnsuredRole::GuildId))?;
-            let role_id: i64 = row.try_get("", &iden_to_str(EnsuredRole::RoleId))?;
+        for row in db.query_all(select).await? {
+            let guild_id: i64 = row.try_get("", EnsuredRole::GuildId.unquoted())?;
+            let role_id: i64 = row.try_get("", EnsuredRole::RoleId.unquoted())?;
 
-            let insert = Query::insert()
+            let mut q = Query::insert();
+            let insert = q
                 .into_table(AutoRole::Table)
                 .columns([
                     AutoRole::Id,
@@ -54,11 +45,9 @@ impl MigrationTrait for Migration {
                     guild_id.into(),
                     Expr::cust("ARRAY[]::BIGINT[]"),
                     role_id.into(),
-                ])
-                .build(PostgresQueryBuilder);
+                ]);
 
-            db.execute(Statement::from_sql_and_values(backend, insert.0, insert.1))
-                .await?;
+            db.execute(insert).await?;
         }
 
         manager

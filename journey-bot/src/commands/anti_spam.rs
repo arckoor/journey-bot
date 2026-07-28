@@ -543,10 +543,8 @@ impl PoolManager {
     }
 
     pub fn schedule(store: Arc<Store>, rx: Receiver<ChannelMessage>) {
-        tokio::spawn(async move {
-            let pool_manager = PoolManager::new(store);
-            pool_manager.schedule_tasks(rx);
-        });
+        let pool_manager = PoolManager::new(store);
+        pool_manager.schedule_tasks(rx);
     }
 
     fn schedule_tasks(self, rx: Receiver<ChannelMessage>) {
@@ -613,7 +611,7 @@ impl PoolManager {
                 }
             }
         }
-        warn!("Channel closed unexpectedly");
+        panic!("Channel closed unexpectedly");
     }
 
     async fn expire_old_punished_messages(store: Arc<Store>) {
@@ -1034,7 +1032,16 @@ async fn pm_add(
         eph(ctx, "Anti-Spam is not enabled for this guild.").await?;
         return Ok(());
     };
-    let content = preprocess_content(&content)?;
+
+    let Some(content) = preprocess_content(&content) else {
+        eph(
+            ctx,
+            "Punctuation is pruned from messages, so `content` must not contain punctuation only.",
+        )
+        .await?;
+        return Ok(());
+    };
+
     let now = now().as_secs_f64();
 
     if let Some(punished_message) = sea_entity::punished_message::Entity::find()
@@ -1148,7 +1155,7 @@ fn time_to_text(diff: u64) -> String {
     formatted
 }
 
-fn preprocess_content(content: &str) -> Result<String, BotError> {
+fn preprocess_content(content: &str) -> Option<String> {
     let cursive_start = '𝘈' as u32;
 
     let mut replacements = HashMap::new();
@@ -1187,11 +1194,7 @@ fn preprocess_content(content: &str) -> Result<String, BotError> {
 
     let msg = msg.trim().to_string();
 
-    if msg.is_empty() {
-        Err(BotError::new("Message must not contain only punctuation."))
-    } else {
-        Ok(msg)
-    }
+    msg.is_empty().then_some(msg)
 }
 
 async fn trigger_update(ctx: Context<'_>, guild_id: GuildId, disable: bool) {
@@ -1217,12 +1220,16 @@ pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Erro
         return Ok(());
     }
 
+    let Some(msg) = preprocess_content(&message.content) else {
+        return Ok(());
+    };
+
     let now = now().as_secs_f64();
     store
         .anti_spam_sender
         .send(ChannelMessage::NewMessage(NewMessage {
             id: message.id.get(),
-            content: preprocess_content(&message.content)?,
+            content: msg,
             guild_id: guild_id.get(),
             channel_id: message.channel_id.get(),
             author_id: message.author.id.get(),
@@ -1230,7 +1237,7 @@ pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Erro
             timestamp: now,
         }))
         .await
-        .log("anti_spam::on_message::send");
+        .log();
 
     Ok(())
 }

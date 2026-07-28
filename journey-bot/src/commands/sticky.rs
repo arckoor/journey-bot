@@ -374,7 +374,7 @@ pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Erro
 
     send_sticky(store.clone(), sticky_message, false)
         .await
-        .log("commands::sticky::on_message::send_sticky");
+        .log();
 
     drop(lock);
 
