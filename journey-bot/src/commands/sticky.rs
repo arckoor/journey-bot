@@ -2,7 +2,9 @@ use std::{collections::HashMap, sync::Arc};
 
 use poise::{
     CreateReply,
-    serenity_prelude::{ChannelId, GuildId, Mentionable, Message, MessageId, futures},
+    serenity_prelude::{
+        ChannelId, CreateAutocompleteResponse, GuildId, Mentionable, Message, MessageId,
+    },
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
@@ -15,7 +17,7 @@ use crate::{
     db::Database,
     emoji::Emoji,
     store::Store,
-    utils::{BotError, LogError, eph, guild_log, send_message},
+    utils::{BotError, LogError, create_autocomplete, eph, guild_log, send_message},
     views::embed::default_embed,
 };
 
@@ -58,31 +60,12 @@ impl StickyLock {
 
 #[poise::command(
     slash_command,
-    subcommands("stickify", "list", "fmt", "set", "remove"),
+    subcommands("list", "set", "remove"),
     guild_only,
     default_member_permissions = "BAN_MEMBERS",
     required_bot_permissions = "SEND_MESSAGES"
 )]
 pub async fn stick(_: Context<'_>) -> Result<(), Error> {
-    Ok(())
-}
-
-/// Format a message for use with other stick commands.
-#[poise::command(slash_command)]
-async fn stickify(
-    ctx: Context<'_>,
-    #[description = "ID of the message to stickify"]
-    #[rename = "message-id"]
-    message_id: MessageId,
-) -> Result<(), Error> {
-    let msg = ctx
-        .data()
-        .ctx
-        .get_message(ctx.channel_id(), message_id)
-        .await?;
-
-    ctx.say(msg.content.replace("\n", "\\n")).await?;
-
     Ok(())
 }
 
@@ -123,29 +106,7 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// Format a message so that it can be used with /stick set.
-#[poise::command(slash_command, rename = "format")]
-async fn fmt(ctx: Context<'_>, id: MessageId) -> Result<(), Error> {
-    let Ok(msg) = ctx
-        .guild_channel()
-        .await
-        .ok_or("Expected to in a guild")?
-        .message(ctx, id)
-        .await
-    else {
-        eph(ctx, "Unable to find message").await?;
-        return Ok(());
-    };
-
-    ctx.say(msg.content.replace("\n", "\\n")).await?;
-
-    Ok(())
-}
-
-async fn autocomplete_id<'a>(
-    ctx: Context<'_>,
-    partial: &'a str,
-) -> impl futures::Stream<Item = String> + 'a {
+async fn autocomplete_id(ctx: Context<'_>, partial: &str) -> CreateAutocompleteResponse {
     let guild_id = ctx.guild_id().unwrap_or(GuildId::new(1));
     let stickies = sea_entity::sticky_message::Entity::find()
         .filter(sea_entity::sticky_message::Column::GuildId.eq(guild_id.get()))
@@ -153,7 +114,7 @@ async fn autocomplete_id<'a>(
         .await
         .unwrap_or(Vec::new());
 
-    futures::stream::iter(
+    create_autocomplete(
         stickies
             .into_iter()
             .filter(move |m| m.id.starts_with(partial))
@@ -372,7 +333,7 @@ pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Erro
         return Ok(());
     };
 
-    send_sticky(store.clone(), sticky_message, false)
+    let _ = send_sticky(store.clone(), sticky_message, false)
         .await
         .log();
 

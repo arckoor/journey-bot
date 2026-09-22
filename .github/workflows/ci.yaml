@@ -5,9 +5,9 @@ permissions:
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }} @ ${{ github.head_ref || github.run_id }}
@@ -17,6 +17,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo fmt -- --check
+        shell: "nix develop -c bash -e {0}"
+
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ["", "--features reddit-api"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: cargo clippy ${{ matrix.features }} -- -D warnings
+        shell: "nix develop -c bash -e {0}"
+
   build:
     strategy:
       fail-fast: false
@@ -26,7 +50,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - run: cargo build ${{ matrix.build-flags }} ${{ matrix.features }}
+        shell: "nix develop -c bash -e {0}"
+      - run: ctest ${{ matrix.build-flags }} ${{ matrix.features }}
+        shell: "nix develop -c bash -e {0}"
 
   build-nix:
     runs-on: ubuntu-latest
@@ -41,23 +71,3 @@ jobs:
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - run: nix build
       - run: docker image load < result
-
-  fmt:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install rustfmt
-        run: rustup component add rustfmt
-      - name: Format Check
-        run: cargo fmt -- --check
-
-  lint:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        features: ["", "--features reddit-api"]
-    steps:
-      - uses: actions/checkout@v5
-      - name: Lint Code
-        run: cargo clippy ${{ matrix.features }} -- -D warnings

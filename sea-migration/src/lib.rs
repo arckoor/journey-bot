@@ -5,6 +5,7 @@ mod m20251005_135525_cl_staging;
 mod m20260121_221856_auto_roles;
 mod m20260207_184027_cleanup;
 mod m20260719_144404_bypass;
+mod m20260922_205217_feed_inactivity_monitor;
 
 pub struct Migrator;
 
@@ -17,6 +18,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260121_221856_auto_roles::Migration),
             Box::new(m20260207_184027_cleanup::Migration),
             Box::new(m20260719_144404_bypass::Migration),
+            Box::new(m20260922_205217_feed_inactivity_monitor::Migration),
         ]
     }
 }

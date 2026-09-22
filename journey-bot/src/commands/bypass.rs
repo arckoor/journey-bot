@@ -3,8 +3,7 @@ use std::{sync::Arc, time::Duration};
 use poise::{
     CreateReply,
     serenity_prelude::{
-        self as serenity, GuildId, Mentionable, Message, RoleId, UserId,
-        futures::{self, Stream},
+        self as serenity, CreateAutocompleteResponse, GuildId, Mentionable, Message, RoleId, UserId,
     },
 };
 use sea_orm::{
@@ -16,8 +15,8 @@ use crate::{
     emoji::Emoji,
     store::Store,
     utils::{
-        LogError, add_roles_to_member, eph, guild_log, now, remove_roles_from_member,
-        schedule_at_interval,
+        LogError, add_roles_to_member, create_autocomplete, eph, guild_log, now,
+        remove_roles_from_member, schedule_at_interval,
     },
     views::embed::default_embed,
 };
@@ -30,7 +29,7 @@ impl BypassScheduler {
             store,
             Duration::from_secs(60 * 10),
             |store: Arc<Store>| async move {
-                Self::remove_old_bypasses(store).await.log();
+                let _ = Self::remove_old_bypasses(store).await.log();
             },
         );
     }
@@ -219,10 +218,7 @@ async fn add(
     Ok(())
 }
 
-async fn autocomplete_id<'a>(
-    ctx: Context<'_>,
-    partial: &'a str,
-) -> impl Stream<Item = String> + 'a {
+async fn autocomplete_id(ctx: Context<'_>, partial: &str) -> CreateAutocompleteResponse {
     let guild_id = ctx.guild_id().unwrap_or(GuildId::new(1));
     let bypass_roles = sea_entity::bypass_role::Entity::find()
         .filter(sea_entity::bypass_role::Column::GuildId.eq(guild_id.get() as i64))
@@ -230,7 +226,7 @@ async fn autocomplete_id<'a>(
         .await
         .unwrap_or(Vec::new());
 
-    futures::stream::iter(
+    create_autocomplete(
         bypass_roles
             .into_iter()
             .filter(move |m| m.id.starts_with(partial))
@@ -292,10 +288,7 @@ async fn remove(
     Ok(())
 }
 
-async fn autocomplete_name<'a>(
-    ctx: Context<'_>,
-    partial: &'a str,
-) -> impl Stream<Item = String> + 'a {
+async fn autocomplete_name(ctx: Context<'_>, partial: &str) -> CreateAutocompleteResponse {
     let guild_id = ctx.guild_id().unwrap_or(GuildId::new(1));
     let bypass_roles = sea_entity::bypass_role::Entity::find()
         .filter(sea_entity::bypass_role::Column::GuildId.eq(guild_id.get()))
@@ -303,7 +296,7 @@ async fn autocomplete_name<'a>(
         .await
         .unwrap_or(Vec::new());
 
-    futures::stream::iter(
+    create_autocomplete(
         bypass_roles
             .into_iter()
             .filter(move |m| m.name.starts_with(partial))

@@ -1,6 +1,6 @@
 use poise::{
     ChoiceParameter, CreateReply,
-    serenity_prelude::{ActivityType, Mentionable},
+    serenity_prelude::{ActivityType, Mentionable, Message},
 };
 use tokio::time::Instant;
 
@@ -31,17 +31,6 @@ impl From<ActivityKind> for ActivityType {
             ActivityKind::Custom => ActivityType::Custom,
         }
     }
-}
-
-/// Ping the bot.
-#[poise::command(slash_command)]
-pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
-    let latency = ctx.ping().await.as_millis();
-    let t1 = Instant::now();
-    eph(ctx, format!("Websocket ping is {latency} ms")).await?;
-    let rest = t1.elapsed().as_millis();
-    eph(ctx, format!("REST API ping is {rest} ms")).await?;
-    Ok(())
 }
 
 /// Send a message as the bot.
@@ -78,6 +67,31 @@ pub async fn echo(
     )
     .await;
 
+    Ok(())
+}
+
+/// Format a message for use in commands requiring multi-line strings.
+#[poise::command(
+    slash_command,
+    guild_only,
+    rename = "format",
+    required_bot_permissions = "SEND_MESSAGES",
+    default_member_permissions = "BAN_MEMBERS"
+)]
+pub async fn fmt(ctx: Context<'_>, msg: Message) -> Result<(), Error> {
+    ctx.say(msg.content.replace("\n", "\\n")).await?;
+
+    Ok(())
+}
+
+/// Ping the bot.
+#[poise::command(slash_command)]
+pub async fn ping(ctx: Context<'_>) -> Result<(), Error> {
+    let latency = ctx.ping().await.as_millis();
+    let t1 = Instant::now();
+    eph(ctx, format!("Websocket ping is {latency} ms")).await?;
+    let rest = t1.elapsed().as_millis();
+    eph(ctx, format!("REST API ping is {rest} ms")).await?;
     Ok(())
 }
 

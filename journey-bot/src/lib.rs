@@ -27,6 +27,7 @@ type Context<'a> = poise::Context<'a, Arc<Store>, Error>;
 type Command =
     poise::Command<Arc<Store>, Box<dyn serde::ser::StdError + std::marker::Send + Sync + 'static>>;
 
+#[allow(clippy::result_large_err)]
 pub async fn launch(config: JourneyBotConfig) -> Result<(), serenity::Error> {
     let JourneyBotConfig { bot, store } = config;
 
@@ -85,8 +86,11 @@ pub async fn launch(config: JourneyBotConfig) -> Result<(), serenity::Error> {
                     }
                 })
             },
-            event_handler: |ctx, event, _framework, store| {
-                Box::pin(async move { event_handler(ctx, event, store.clone()).await })
+            event_handler: |ctx, event| {
+                Box::pin(async move {
+                    event_handler(ctx.serenity_context, event, ctx.user_data.clone()).await;
+                    Ok(())
+                })
             },
             initialize_owners: true,
             ..Default::default()
@@ -134,11 +138,7 @@ pub async fn launch(config: JourneyBotConfig) -> Result<(), serenity::Error> {
     client.await.unwrap().start().await
 }
 
-async fn event_handler(
-    ctx: &serenity::Context,
-    event: &serenity::FullEvent,
-    store: Arc<Store>,
-) -> Result<(), Error> {
+async fn event_handler(ctx: &serenity::Context, event: &serenity::FullEvent, store: Arc<Store>) {
     #[cfg(debug_assertions)]
     info!("Got an event: {:?}", event.snake_case_name());
 
@@ -147,7 +147,7 @@ async fn event_handler(
             #[cfg(debug_assertions)]
             info!("{:?}", new_member);
 
-            commands::guild_config::on_member_join(store.clone(), new_member)
+            let _ = commands::guild_config::on_member_join(store.clone(), new_member)
                 .await
                 .log();
         }
@@ -155,7 +155,7 @@ async fn event_handler(
             #[cfg(debug_assertions)]
             info!("{:?}\n{:?}", new, event);
 
-            commands::auto_role::on_member_update(store.clone(), ctx, new, event)
+            let _ = commands::auto_role::on_member_update(store.clone(), ctx, new, event)
                 .await
                 .log();
         }
@@ -165,22 +165,22 @@ async fn event_handler(
 
             tokio::join!(
                 async {
-                    commands::anti_spam::on_message(store.clone(), new_message)
+                    let _ = commands::anti_spam::on_message(store.clone(), new_message)
                         .await
                         .log();
                 },
                 async {
-                    commands::censor::on_message(store.clone(), new_message)
+                    let _ = commands::bypass::on_message(store.clone(), new_message)
                         .await
                         .log();
                 },
                 async {
-                    commands::sticky::on_message(store.clone(), new_message)
+                    let _ = commands::censor::on_message(store.clone(), new_message)
                         .await
                         .log();
                 },
                 async {
-                    commands::bypass::on_message(store.clone(), new_message)
+                    let _ = commands::sticky::on_message(store.clone(), new_message)
                         .await
                         .log();
                 },
@@ -188,6 +188,4 @@ async fn event_handler(
         }
         _ => {}
     }
-
-    Ok(())
 }

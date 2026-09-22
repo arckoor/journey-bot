@@ -80,36 +80,13 @@ impl Database {
 
         let sea = sea_orm::Database::connect(opt)
             .await
-            .map_err(|_| BotError::new("Failed to create SeaORM connection"))?;
+            .map_err(|e| BotError::new(format!("Failed to create SeaORM connection: {e:?}")))?;
 
         Migrator::up(&sea, None)
             .await
             .map_err(|e| BotError::new(format!("Failed to migrate database: {e:?}")))?;
 
         Ok(Self { sea })
-    }
-
-    pub async fn get_or_create_guild_config(
-        &self,
-        guild: u64,
-    ) -> Result<sea_entity::guild_config::Model, BotError> {
-        let guild_config = sea_entity::guild_config::Entity::find_by_id(guild as i64)
-            .one(&self.sea)
-            .await?;
-
-        match guild_config {
-            Some(guild_config) => Ok(guild_config),
-            None => {
-                let guild_config = sea_entity::guild_config::ActiveModel {
-                    id: Set(guild as i64),
-                    ..Default::default()
-                }
-                .insert(&self.sea)
-                .await?;
-
-                Ok(guild_config)
-            }
-        }
     }
 
     pub async fn get_or_create_config<E>(&self, guild: u64) -> Result<E::Model, BotError>
@@ -128,29 +105,6 @@ impl Database {
 
         let model = active.insert(&self.sea).await?;
         Ok(model)
-    }
-
-    pub async fn get_or_create_censor_config(
-        &self,
-        guild: u64,
-    ) -> Result<sea_entity::censor_config::Model, BotError> {
-        let censor_config = sea_entity::censor_config::Entity::find_by_id(guild as i64)
-            .one(&self.sea)
-            .await?;
-
-        match censor_config {
-            Some(censor_config) => Ok(censor_config),
-            None => {
-                let censor_config = sea_entity::censor_config::ActiveModel {
-                    id: Set(guild as i64),
-                    ..Default::default()
-                }
-                .insert(&self.sea)
-                .await?;
-
-                Ok(censor_config)
-            }
-        }
     }
 
     pub async fn stage_new_items<E>(

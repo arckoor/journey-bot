@@ -12,25 +12,25 @@ path = "src/bin/main.rs"
 binary-heap-plus = "0.5.0"
 chrono = "0.4.45"
 chrono-tz = "0.10.4"
-config = { version = "0.15.25", features = ["toml"], default-features = false }
+config = { version = "0.15.26", features = ["toml"], default-features = false }
 csv = "1.4.0"
 cuid2 = "0.1.6"
-jsonwebtoken = "11.0.0"
-poise = { version = "0.6.2", features = [
+jsonwebtoken = "11.1.0"
+poise = { version = "0.7.0", features = [
   "default",
   "handle_panics",
 ], default-features = false }
 rapidfuzz = "0.5.0"
 regex = "1.13.1"
-reqwest = { version = "0.13.4", features = [
+reqwest = { version = "0.13.5", features = [
   "rustls",
 ], default-features = false }
-roux = { version = "2.2.15", features = [
+roux = { version = "2.3.0", features = [
   "rustls",
 ], default-features = false, optional = true }
 sea-entity = { path = "../sea-entity" }
 sea-migration = { path = "../sea-migration" }
-sea-orm = { version = "2.0.0", features = [
+sea-orm = { version = "2.0.3", features = [
   "sqlx-postgres",
   "runtime-tokio-rustls",
   "macros",
