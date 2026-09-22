@@ -1,14 +1,14 @@
 use std::{collections::HashMap, path::PathBuf};
 
 use binary_heap_plus::BinaryHeap;
-use poise::serenity_prelude::futures::{self, Stream};
+use poise::serenity_prelude::CreateAutocompleteResponse;
 use regex::Regex;
 use tokio::sync::{RwLock, RwLockReadGuard};
 use tracing::info;
 
 use crate::{
     Context, Error,
-    utils::{BotError, eph},
+    utils::{BotError, create_autocomplete, eph},
     views::paginator::paginate,
 };
 
@@ -123,15 +123,12 @@ pub async fn link(_: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-async fn autocomplete_link<'a>(
-    ctx: Context<'_>,
-    partial: &'a str,
-) -> impl Stream<Item = String> + 'a {
+async fn autocomplete_link(ctx: Context<'_>, partial: &str) -> CreateAutocompleteResponse {
     let Some(links) = ctx.data().links.get().await else {
-        return futures::stream::iter(vec![]);
+        return CreateAutocompleteResponse::new();
     };
     if partial.is_empty() {
-        return futures::stream::iter(vec![]);
+        return CreateAutocompleteResponse::new();
     }
 
     let keys = links.keys().collect::<Vec<_>>();
@@ -156,14 +153,7 @@ async fn autocomplete_link<'a>(
         }
     }
 
-    let keys = heap
-        .drain()
-        .filter(|d| d.score > 8000)
-        .map(|d| d.key)
-        .rev()
-        .collect::<Vec<_>>();
-
-    futures::stream::iter(keys)
+    create_autocomplete(heap.drain().filter(|d| d.score > 8000).map(|d| d.key).rev())
 }
 
 /// Find a link to a topic.

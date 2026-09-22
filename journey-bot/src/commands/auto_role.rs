@@ -6,9 +6,8 @@ use std::{
 use poise::{
     CreateReply,
     serenity_prelude::{
-        self as serenity, CreateAttachment, GuildId, GuildMemberUpdateEvent, Http, Member,
-        Mentionable, Role, RoleId,
-        futures::{self, Stream},
+        self as serenity, CreateAttachment, CreateAutocompleteResponse, GuildId,
+        GuildMemberUpdateEvent, Http, Member, Mentionable, Role, RoleId,
     },
 };
 use regex::Regex;
@@ -21,7 +20,7 @@ use crate::{
     emoji::Emoji,
     store::Store,
     utils::{
-        BotError, add_roles_to_member, eph, guild_log, member_is_valid_target,
+        BotError, add_roles_to_member, create_autocomplete, eph, guild_log, member_is_valid_target,
         remove_roles_from_member,
     },
     views::embed::default_embed,
@@ -135,10 +134,7 @@ async fn add(
     Ok(())
 }
 
-async fn autocomplete_id<'a>(
-    ctx: Context<'_>,
-    partial: &'a str,
-) -> impl Stream<Item = String> + 'a {
+async fn autocomplete_id(ctx: Context<'_>, partial: &str) -> CreateAutocompleteResponse {
     let guild_id = ctx.guild_id().unwrap_or(GuildId::new(1));
     let auto_roles = sea_entity::auto_role::Entity::find()
         .filter(sea_entity::auto_role::Column::GuildId.eq(guild_id.get()))
@@ -146,7 +142,7 @@ async fn autocomplete_id<'a>(
         .await
         .unwrap_or(Vec::new());
 
-    futures::stream::iter(
+    create_autocomplete(
         auto_roles
             .into_iter()
             .filter(move |m| m.id.starts_with(partial))

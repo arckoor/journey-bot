@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     fmt::Display,
     iter::zip,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
@@ -19,7 +19,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
 };
 use tokio::sync::mpsc::Receiver;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use unicode_normalization::UnicodeNormalization;
 
 use crate::{
@@ -28,7 +28,7 @@ use crate::{
     store::Store,
     utils::{
         BotError, LogError, censor_log, eph, guild_log, message_can_be_censored, now,
-        schedule_at_interval, send_message, timestamp_from_f64, timestamp_now,
+        schedule_at_interval, send_message, time_to_text, timestamp_from_f64, timestamp_now,
     },
     views::embed::default_embed,
 };
@@ -42,6 +42,7 @@ pub enum ChannelMessage {
     PrintPool(GuildId, ChannelId),
 }
 
+#[derive(Debug)]
 pub struct NewMessage {
     id: u64,
     content: String,
@@ -567,6 +568,10 @@ impl PoolManager {
         while let Some(msg) = rx.recv().await {
             match msg {
                 ChannelMessage::NewMessage(msg) => {
+                    if msg.content.is_empty() {
+                        error!("Received an empty message: {msg:?}");
+                        continue;
+                    }
                     if !self.pools.contains_key(&msg.guild_id) {
                         if let Ok(pool) = Pool::new(self.store.clone(), msg.guild_id).await {
                             self.pools.insert(msg.guild_id, pool);
@@ -1128,60 +1133,37 @@ async fn pool(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-fn time_to_text(diff: u64) -> String {
-    let (days, remainder) = (diff / 86400, diff % 86400);
-    let (hours, remainder) = (remainder / 3600, remainder % 3600);
-    let minutes = remainder % 60;
+fn cursive_replacements() -> &'static HashMap<char, char> {
+    static CURSIVE_REPLACEMENTS: OnceLock<HashMap<char, char>> = OnceLock::new();
+    CURSIVE_REPLACEMENTS.get_or_init(|| {
+        let cursive_start = '𝘈' as u32;
 
-    let mut formatted = String::new();
-    if days > 0 {
-        formatted.push_str(&format!("{} day{}", days, if days > 1 { "s" } else { "" }));
-    }
-    if hours > 0 {
-        formatted.push_str(&format!(
-            "{} hour{}",
-            hours,
-            if hours > 1 { "s" } else { "" }
-        ));
-    }
-    if minutes > 0 || !(days > 0 || hours > 1) {
-        formatted.push_str(&format!(
-            "{} minute{}",
-            minutes,
-            if minutes > 1 { "s" } else { "" }
-        ));
-    }
+        let mut replacements = HashMap::new();
 
-    formatted
+        for (i, c) in ('A'..='Z').enumerate() {
+            replacements.insert(char::from_u32(cursive_start + i as u32).unwrap(), c);
+        }
+
+        for (i, c) in ('a'..='z').enumerate() {
+            replacements.insert(char::from_u32(cursive_start + 26 + i as u32).unwrap(), c);
+        }
+
+        replacements
+    })
 }
 
 fn preprocess_content(content: &str) -> Option<String> {
-    let cursive_start = '𝘈' as u32;
-
-    let mut replacements = HashMap::new();
-    for (i, c) in ('A'..='Z').enumerate() {
-        replacements.insert(std::char::from_u32(cursive_start + i as u32).unwrap(), c);
-    }
-    for (i, c) in ('a'..='z').enumerate() {
-        replacements.insert(
-            std::char::from_u32(cursive_start + 26 + i as u32).unwrap(),
-            c,
-        );
-    }
-
-    let mut msg: String = content
-        .to_lowercase()
-        .replace('\n', " ")
+    let mut msg = content
         .chars()
-        .map(|ch| replacements.get(&ch).cloned().unwrap_or(ch))
-        .collect();
-
-    msg = msg.nfkd().filter(|c| c.is_ascii()).collect::<String>();
-
+        .map(|ch| cursive_replacements().get(&ch).cloned().unwrap_or(ch))
+        .map(|c| if c.is_whitespace() { ' ' } else { c })
+        .collect::<String>();
+    msg = msg.nfkd().filter(|c| c.is_ascii()).collect();
+    msg = msg.to_lowercase();
     msg.retain(|c| !c.is_ascii_punctuation() && !c.is_control());
+    msg = msg.split_whitespace().collect::<Vec<_>>().join(" ");
 
     let mut chars: Vec<char> = msg.chars().collect();
-    chars.reverse();
     while let Some(c) = chars.last() {
         if c.is_ascii_digit() {
             chars.pop();
@@ -1189,12 +1171,10 @@ fn preprocess_content(content: &str) -> Option<String> {
             break;
         }
     }
-    chars.reverse();
     msg = chars.into_iter().collect::<String>();
 
     let msg = msg.trim().to_string();
-
-    msg.is_empty().then_some(msg)
+    if msg.is_empty() { None } else { Some(msg) }
 }
 
 async fn trigger_update(ctx: Context<'_>, guild_id: GuildId, disable: bool) {
@@ -1225,7 +1205,7 @@ pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Erro
     };
 
     let now = now().as_secs_f64();
-    store
+    let _ = store
         .anti_spam_sender
         .send(ChannelMessage::NewMessage(NewMessage {
             id: message.id.get(),
@@ -1240,4 +1220,60 @@ pub async fn on_message(store: Arc<Store>, message: &Message) -> Result<(), Erro
         .log();
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::commands::anti_spam::preprocess_content;
+
+    #[test]
+    fn test_message_preprocessing() {
+        assert_eq!(preprocess_content(""), None);
+        assert_eq!(preprocess_content("   "), None);
+
+        assert_eq!(
+            preprocess_content("  Hello   WORLD  "),
+            Some("hello world".into())
+        );
+        assert_eq!(
+            preprocess_content("hello\n\nworld"),
+            Some("hello world".into())
+        );
+        assert_eq!(
+            preprocess_content("hello\t \tworld"),
+            Some("hello world".into())
+        );
+        assert_eq!(
+            preprocess_content("  hello \n  world  "),
+            Some("hello world".into())
+        );
+
+        assert_eq!(
+            preprocess_content("HéLLo   CAFÉ"),
+            Some("hello cafe".into())
+        );
+        assert_eq!(
+            preprocess_content("𝘏𝘦𝘭𝘭𝘰   𝘞𝘰𝘳𝘭𝘥"),
+            Some("hello world".into())
+        );
+
+        assert_eq!(
+            preprocess_content("Hello, world! How are you?"),
+            Some("hello world how are you".into())
+        );
+
+        assert_eq!(preprocess_content("hello123"), Some("hello".into()));
+        assert_eq!(
+            preprocess_content("hello123world"),
+            Some("hello123world".into())
+        );
+        assert_eq!(
+            preprocess_content("123 hello 456"),
+            Some("123 hello".into())
+        );
+        assert_eq!(preprocess_content("hello123!!!"), Some("hello".into()));
+
+        assert_eq!(preprocess_content("123!!!"), None);
+        assert_eq!(preprocess_content("🤨!!!"), None);
+    }
 }

@@ -23,6 +23,10 @@
         pkgs = import nixpkgs {
           inherit system overlays;
         };
+        rust-platform = pkgs.rust-bin.stable.latest.default.override {
+          extensions = ["llvm-tools-preview"];
+        };
+
         mkScript = name: text: (pkgs.writeShellScriptBin name text);
 
         shellScripts = [
@@ -69,6 +73,7 @@
           '')
 
           (mkScript "mig" "sea-orm-cli migrate -d sea-migration generate $1")
+          (mkScript "ctest" "cargo nextest run --workspace \"$@\"")
         ];
 
         craneLib = crane.mkLib pkgs;
@@ -90,12 +95,16 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs;
             [
-              rust-bin.stable.latest.default
+              cargo-audit
               cargo-edit
+              cargo-llvm-cov
+              cargo-nextest
+
               sea-orm-cli
 
               postgresql_17_jit
             ]
+            ++ [rust-platform]
             ++ shellScripts;
 
           RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";

@@ -85,7 +85,7 @@ async fn configure_ml_channel(
         .await
         .ok_or(BotError::new("Expected a guild"))?;
 
-    let bot_member = guild.member(ctx, &ctx.framework().bot_id).await?;
+    let bot_member = guild.member(ctx, &ctx.framework().bot_id()).await?;
     let channel = channel
         .guild()
         .ok_or(BotError::new("Expected a guild channel"))?;

@@ -3,10 +3,7 @@ use std::{sync::Arc, time::Duration};
 use chrono::DateTime;
 use poise::{
     CreateReply,
-    serenity_prelude::{
-        ChannelId, GuildId, Mentionable,
-        futures::{self, Stream},
-    },
+    serenity_prelude::{ChannelId, CreateAutocompleteResponse, GuildId, Mentionable},
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter,
@@ -19,12 +16,15 @@ use crate::{
     Context, Error,
     emoji::Emoji,
     store::Store,
-    utils::{BotError, LogError, eph, guild_log, send_message, timestamp_from_f64_with_tz},
+    utils::{
+        BotError, LogError, create_autocomplete, eph, guild_log, now, send_message, time_to_text,
+        timestamp_from_f64_with_tz,
+    },
     views::embed::default_embed,
 };
 
 #[cfg(feature = "reddit-api")]
-use crate::{config::RedditConfig, utils::now};
+use crate::config::RedditConfig;
 #[cfg(feature = "reddit-api")]
 use roux::{Me, Reddit, Subreddit, response::BasicThing, submission::SubmissionData};
 #[cfg(feature = "reddit-api")]
@@ -175,13 +175,13 @@ impl RedditScheduler {
         tokio::spawn(async move {
             // sleep at startup so we have enough time to init everything
             tokio::time::sleep(Duration::from_secs(5)).await;
-            Self::watch_subreddit(id, store.clone()).await.log();
+            let _ = Self::watch_subreddit(id, store.clone()).await.log();
         });
     }
 
     pub async fn watch_subreddit(id: String, store: Arc<Store>) -> Result<(), BotError> {
         info!("{}", format!("Started observer for feed {}", id));
-        sea_entity::reddit_feed::Entity::find_by_id(&id)
+        let feed = sea_entity::reddit_feed::Entity::find_by_id(&id)
             .one(&store.db.sea)
             .await?
             .ok_or(BotError::new("Feed not found"))?;
@@ -248,13 +248,19 @@ impl RedditScheduler {
                         retry_after: None,
                     })?;
 
-                let feed = serde_xml_rs::from_str::<Feed>(&text).map_err(|err| {
+                let mut feed = serde_xml_rs::from_str::<Feed>(&text).map_err(|err| {
                     warn!("Error deserializing XML document: {:?}", err);
                     RetryError::Transient {
                         err: (),
                         retry_after: None,
                     }
                 })?;
+
+                feed.entries.sort_by(|a, b| {
+                    a.published
+                        .partial_cmp(&b.published)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
 
                 Ok(feed.entries)
             };
@@ -268,6 +274,7 @@ impl RedditScheduler {
         )
         .max_delay(Duration::from_secs(60 * 60 * 2));
 
+        let mut last_post = Some(feed.latest_post);
         loop {
             // refetch every time, if it's removed we just terminate
             let Ok(Some(mut feed)) = sea_entity::reddit_feed::Entity::find_by_id(&id)
@@ -293,12 +300,34 @@ impl RedditScheduler {
                     store,
                     GuildId::new(feed.guild_id as u64),
                     Emoji::Warning,
-                    format!("Tried to query entries for feed (`{}`), but URL was malformed. This will not be reattempted.", feed.id),
+                    format!("Tried to query entries for feed `{}`, but URL was malformed. This will not be reattempted.", feed.id),
                     None,
                 )
                 .await;
                 return Ok(());
             };
+
+            if let Some(lp) = last_post
+                && now().as_secs_f64() > (lp + feed.activity_timeout as f64)
+            {
+                let ts_string = time_to_text(feed.activity_timeout as u64);
+                guild_log(
+                    store.clone(),
+                    GuildId::new(feed.guild_id as u64),
+                    Emoji::Warning,
+                    format!(
+                        "No new posts observed for feed `{}` for {}, is everything alright?",
+                        feed.id, ts_string
+                    ),
+                    None,
+                )
+                .await;
+                warn!(
+                    "No posts observed for feed {} for {} days",
+                    feed.id, ts_string
+                );
+                last_post = None;
+            }
 
             let mut latest_time = feed.latest_post;
             for submission in submissions {
@@ -307,6 +336,7 @@ impl RedditScheduler {
                     if needs_retry {
                         break;
                     }
+                    last_post = Some(now().as_secs_f64());
                     latest_time = submission.published;
                     {
                         let mut updated_feed = feed.into_active_model();
@@ -361,6 +391,10 @@ impl RedditScheduler {
             tokio::time::sleep(Duration::from_secs(60 * 10)).await;
             true
         } else {
+            info!(
+                "Posted new feed item published at {} for feed {}",
+                submission.published, feed.id
+            );
             false
         }
     }
@@ -457,6 +491,9 @@ async fn reddit(
     #[description = "A link to the subreddit."]
     subreddit_link: String,
     #[description = "The template for new posts."] template: Option<String>,
+    #[rename = "activity-timeout"]
+    #[description = "The number of seconds to wait until an inactivity alert is posted."]
+    activity_timeout: Option<u32>,
 ) -> Result<(), Error> {
     let guild_id = ctx.guild_id().ok_or("Expected to be in a guild")?;
 
@@ -496,6 +533,7 @@ async fn reddit(
         channel_id: Set(ctx.channel_id().get() as i64),
         subreddit: Set(subreddit_link.clone()),
         template: Set(template),
+        activity_timeout: Set(activity_timeout.unwrap_or(60 * 60 * 24 * 7) as i32),
         ..Default::default()
     }
     .insert(&ctx.data().db.sea)
@@ -525,10 +563,7 @@ async fn reddit(
     Ok(())
 }
 
-async fn autocomplete_id<'a>(
-    ctx: Context<'_>,
-    partial: &'a str,
-) -> impl Stream<Item = String> + 'a {
+async fn autocomplete_id(ctx: Context<'_>, partial: &str) -> CreateAutocompleteResponse {
     let guild_id = ctx.guild_id().unwrap_or(GuildId::new(1));
     let feeds = sea_entity::reddit_feed::Entity::find()
         .filter(sea_entity::reddit_feed::Column::GuildId.eq(guild_id.get()))
@@ -536,7 +571,7 @@ async fn autocomplete_id<'a>(
         .await
         .unwrap_or(Vec::new());
 
-    futures::stream::iter(
+    create_autocomplete(
         feeds
             .into_iter()
             .filter(move |m| m.id.starts_with(partial))
@@ -553,7 +588,10 @@ async fn edit(
     #[max_length = 10]
     #[autocomplete = "autocomplete_id"]
     id: String,
-    #[description = "The new template to use for the feed"] template: String,
+    #[description = "The new template to use for the feed"] template: Option<String>,
+    #[rename = "activity-timeout"]
+    #[description = "The number of seconds to wait until an inactivity alert is posted."]
+    activity_timeout: Option<u32>,
 ) -> Result<(), Error> {
     let guild_id = ctx.guild_id().ok_or("Expected to be in a guild")?;
 
@@ -567,8 +605,18 @@ async fn edit(
         return Ok(());
     };
 
+    if template.is_none() && activity_timeout.is_none() {
+        eph(ctx, "No properties to edit given.").await?;
+        return Ok(());
+    }
+
     let mut feed = feed.into_active_model();
-    feed.template = Set(template.replace("\\n", "\n"));
+    if let Some(template) = template {
+        feed.template = Set(template.replace("\\n", "\n"));
+    }
+    if let Some(activity_timeout) = activity_timeout {
+        feed.activity_timeout = Set(activity_timeout as i32);
+    }
     feed.update(&ctx.data().db.sea).await?;
 
     guild_log(

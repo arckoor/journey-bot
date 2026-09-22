@@ -3,7 +3,8 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use poise::{
     CreateReply,
     serenity_prelude::{
-        CacheHttp, ChannelId, EditMessage, GuildId, Mentionable, MessageId, futures,
+        CacheHttp, ChannelId, CreateAutocompleteResponse, EditMessage, GuildId, Mentionable,
+        MessageId,
     },
 };
 use sea_orm::{
@@ -29,7 +30,8 @@ use crate::{
     emoji::Emoji,
     store::Store,
     utils::{
-        BotError, LogError, eph, fetch_sheet, guild_log, now, schedule_at_interval, send_message,
+        BotError, LogError, create_autocomplete, eph, fetch_sheet, guild_log, now,
+        schedule_at_interval, send_message,
     },
     views::embed::default_embed,
 };
@@ -427,11 +429,11 @@ impl TwitchScheduler {
 
             let now = now().as_secs_f64();
             for stream in streams.data {
-                Self::process_stream(store.clone(), stream, &observer, now)
+                let _ = Self::process_stream(store.clone(), stream, &observer, now)
                     .await
                     .log();
             }
-            Self::remove_known_streams(store.clone(), observer, now)
+            let _ = Self::remove_known_streams(store.clone(), observer, now)
                 .await
                 .log();
             // we don't want to hammer the api
@@ -474,6 +476,7 @@ impl TwitchScheduler {
             .twitch_client
             .req(GetUsersRequest::logins(vec![stream.user_login.clone()]))
             .await
+            .log()
             .ok()
             && let Some(user) = users.first()
             && let Some(desc) = user.description.map(|desc| desc.to_lowercase())
@@ -837,10 +840,7 @@ async fn list(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-async fn autocomplete_id<'a>(
-    ctx: Context<'_>,
-    partial: &'a str,
-) -> impl futures::Stream<Item = String> + 'a {
+async fn autocomplete_id(ctx: Context<'_>, partial: &str) -> CreateAutocompleteResponse {
     let guild_id = ctx.guild_id().unwrap_or(GuildId::new(1));
     let observers = sea_entity::stream_observer::Entity::find()
         .filter(sea_entity::stream_observer::Column::GuildId.eq(guild_id.get()))
@@ -848,7 +848,7 @@ async fn autocomplete_id<'a>(
         .await
         .unwrap_or(Vec::new());
 
-    futures::stream::iter(
+    create_autocomplete(
         observers
             .into_iter()
             .filter(move |m| m.id.starts_with(partial))

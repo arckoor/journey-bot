@@ -10,8 +10,9 @@ use chrono_tz::Tz;
 use poise::{
     CreateReply,
     serenity_prelude::{
-        self as serenity, ActivityData, ActivityType, ChannelId, CreateAttachment, CreateMessage,
-        GuildId, Http, Member, Message, Role, RoleId,
+        self as serenity, ActivityData, ActivityType, AutocompleteChoice, ChannelId,
+        CreateAttachment, CreateAutocompleteResponse, CreateMessage, GuildId, Http, Member,
+        Message, Role, RoleId,
     },
 };
 
@@ -111,6 +112,39 @@ pub fn timestamp_from_f64(ts: f64) -> String {
     datetime.format("%d/%m/%Y %H:%M:%S").to_string()
 }
 
+pub fn time_to_text(diff: u64) -> String {
+    let (days, remainder) = (diff / 86400, diff % 86400);
+    let (hours, remainder) = (remainder / 3600, remainder % 3600);
+    let minutes = remainder / 60;
+
+    let mut formatted = String::new();
+    if days > 0 {
+        formatted.push_str(&format!("{} day{}", days, if days > 1 { "s" } else { "" }));
+    }
+    if hours > 0 {
+        if days > 0 {
+            formatted.push(' ');
+        }
+        formatted.push_str(&format!(
+            "{} hour{}",
+            hours,
+            if hours > 1 { "s" } else { "" }
+        ));
+    }
+    if minutes > 0 || !(days > 0 || hours > 0) {
+        if days > 0 || hours > 0 {
+            formatted.push(' ');
+        }
+        formatted.push_str(&format!(
+            "{} minute{}",
+            minutes,
+            if minutes != 1 { "s" } else { "" }
+        ));
+    }
+
+    formatted
+}
+
 pub fn create_activity(
     kind: ActivityType,
     message: &str,
@@ -128,6 +162,10 @@ pub fn create_activity(
         serenity::ActivityType::Custom => Ok(ActivityData::custom(message)),
         _ => Err(BotError::new("Unknown activity!").into()),
     }
+}
+
+pub fn create_autocomplete(iter: impl Iterator<Item = String>) -> CreateAutocompleteResponse {
+    CreateAutocompleteResponse::new().set_choices(iter.map(AutocompleteChoice::from).collect())
 }
 
 pub async fn eph(ctx: Context<'_>, msg: impl Into<String>) -> Result<(), Error> {
@@ -248,9 +286,8 @@ pub async fn message_can_be_censored(
     Ok(member
         .roles
         .iter()
-        .filter(|id| guild_config.trusted_roles.contains(&(id.get() as i64)))
-        .collect::<Vec<_>>()
-        .is_empty())
+        .find(|id| guild_config.trusted_roles.contains(&(id.get() as i64)))
+        .is_none())
 }
 
 fn filter_roles(
@@ -412,16 +449,52 @@ where
     });
 }
 
-pub trait LogError {
+pub trait LogError<T, E> {
     #[track_caller]
-    fn log(self);
+    fn log(self) -> Result<T, E>;
 }
 
-impl<T, E: std::fmt::Display> LogError for Result<T, E> {
+impl<T, E: std::fmt::Display> LogError<T, E> for Result<T, E> {
     #[track_caller]
-    fn log(self) {
-        if let Err(err) = self {
-            tracing::error!("error at {}: {err}", std::panic::Location::caller())
+    fn log(self) -> Result<T, E> {
+        match self {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                tracing::error!("error at {}: {e}", std::panic::Location::caller());
+                Err(e)
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::time_to_text;
+
+    #[test]
+    fn test_timestamp_conversion() {
+        assert_eq!(&time_to_text(0), "0 minutes");
+        assert_eq!(&time_to_text(1), "0 minutes");
+        assert_eq!(&time_to_text(59), "0 minutes");
+        assert_eq!(&time_to_text(60), "1 minute");
+        assert_eq!(&time_to_text(61), "1 minute");
+
+        assert_eq!(&time_to_text(3599), "59 minutes");
+        assert_eq!(&time_to_text(3600), "1 hour");
+        assert_eq!(&time_to_text(3601), "1 hour");
+        assert_eq!(&time_to_text(3660), "1 hour 1 minute");
+        assert_eq!(&time_to_text(3661), "1 hour 1 minute");
+
+        assert_eq!(&time_to_text(7199), "1 hour 59 minutes");
+        assert_eq!(&time_to_text(7200), "2 hours");
+
+        assert_eq!(&time_to_text(86399), "23 hours 59 minutes");
+        assert_eq!(&time_to_text(86400), "1 day");
+        assert_eq!(&time_to_text(86460), "1 day 1 minute");
+        assert_eq!(&time_to_text(90000), "1 day 1 hour");
+
+        assert_eq!(&time_to_text(90060), "1 day 1 hour 1 minute");
+        assert_eq!(&time_to_text(172800), "2 days");
+        assert_eq!(&time_to_text(176460), "2 days 1 hour 1 minute");
     }
 }

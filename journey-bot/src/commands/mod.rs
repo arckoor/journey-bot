@@ -19,8 +19,9 @@ pub fn commands() -> Vec<Command> {
     vec![
         anti_spam::as_config(),
         auto_role::auto_role(),
-        basic::ping(),
         basic::echo(),
+        basic::fmt(),
+        basic::ping(),
         basic::presence(),
         basic::register(),
         bypass::bypass(),
